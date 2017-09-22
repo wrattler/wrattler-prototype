@@ -1,0 +1,4 @@
+.vscode/
+node_modules/
+paket-files/
+public/bundle.js
