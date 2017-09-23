@@ -169,6 +169,9 @@ type El(ns) =
   static member (?) (el:El, n:string) = fun a b ->
     Element(el.Namespace, n, Array.ofList a, Array.ofList b, None)
 
+  member x.el(n:string) = fun a b ->
+    Element(x.Namespace, n, Array.ofList a, Array.ofList b, None)
+
   member x.delayed sym body f =
     Delayed(sym, body, f)
 

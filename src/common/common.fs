@@ -7,6 +7,9 @@ open System.Collections.Generic
 
 module FsOption = Microsoft.FSharp.Core.Option
 
+[<Emit("eval($0)")>]
+let eval<'T> (code:string) : 'T = failwith "never"
+
 [<Emit("$0[$1]")>]
 let getProperty<'T> (obj:obj) (name:string) : 'T = failwith "never"
 

@@ -6,31 +6,48 @@ open Fable.Import
 
 let demo = """
 # Sample notebook
-This is a sample notebook
+This is a _sample_ notebook
 
 ```r
 data <- iris
 agg <- aggregate(Petal.Width~Species, data, mean)
+colnames(agg)[2] <- "PetalWidth"
 ```
 
 ## visualization
 
 ```javascript
-foo
+var spec = {
+  "$schema": "https://vega.github.io/schema/vega-lite/v2.0.json",
+  "width": 600,
+  "data": {
+    "values": agg
+  },
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "Species", "type": "ordinal"},
+    "y": {"field": "PetalWidth", "type": "quantitative"}
+  }
+}
+addOutput(function(id) { 
+  vega.embed("#" + id, spec, {actions:false});
+});
 ```
+
+Irrelevant [link](http://turing.ac.uk)
 """
 
 // ------------------------------------------------------------------------------------------------
 
 type Value = 
+  | Outputs of (string -> unit)[]
   | Frame of obj[]
   | Frames of Map<string, obj[]>
 
 type EntityKind = 
-  | RCode of code:string * frames:Entity list
-  | RDataFrame of var:string * rblock:Entity
-  | RCodeBlock of rcode:Entity * vars:Entity list
-  | JsCodeBlock of string * frames:Entity list
+  | Code of lang:string * code:string * frames:Entity list
+  | DataFrame of var:string * rblock:Entity
+  | CodeBlock of lang:string * code:Entity * vars:Entity list
   | Notebook of blocks:Entity list
 
 and Entity = 
@@ -113,7 +130,7 @@ let evalRCode code = async {
   
 let getExports ent = async {
   match ent with 
-  | { Kind = RCode(code, _) } ->
+  | { Kind = Code("r", code, _) } ->
       let! json = Http.Request("POST", "http://wrattler-r-service.azurewebsites.net/exports", code)
       let vars = unbox<RExportsVar[]> (jsonParse json)
       return [ for v in vars -> v.variable ]
@@ -127,12 +144,13 @@ let bind nodes =
         return variables, []
     | CodeBlock(code) ->
         let vars = Map.toList variables |> List.map snd
-        let kind = match code with RSource code -> RCode(code, vars) | JsSource code -> JsCodeBlock(code, vars)
+        let lang, code = match code with RSource code -> "r", code | JsSource code -> "js", code
+        let kind = Code(lang, code, vars)
         let ent = { Kind = kind; Value = None }
         let! vars = getExports ent
-        let vars = vars |> List.map (fun v -> v, { Kind = RDataFrame(v, ent); Value = None })
+        let vars = vars |> List.map (fun v -> v, { Kind = DataFrame(v, ent); Value = None })
         let variables = vars |> List.fold (fun variables (v, ent) -> Map.add v ent variables) variables
-        let blockEnt = { Kind = RCodeBlock(ent, List.map snd vars); Value = None }
+        let blockEnt = { Kind = EntityKind.CodeBlock(lang, ent, List.map snd vars); Value = None }
         node.Entity <- Some blockEnt
         return variables, [blockEnt] }
 
@@ -153,19 +171,30 @@ let rec evaluate ent = async {
   Log.trace("test", "Evaluating: %O", box ent)
   match ent.Kind with
   | _ when ent.Value.IsSome -> ()
-  | RCode(code, _) ->
+  | Code("r", code, _) ->
       let! res = evalRCode code
       ent.Value <- Some res
-  | RDataFrame(v, rblock) ->
+  | Code("js", code, vars) ->
+      let vars = vars |> List.choose (function { Kind = DataFrame(n, _); Value = Some(Frame v) } -> Some(n, v) | _ -> None)
+      let code = 
+        "(function(addOutput) { return (function(frames) {" +
+        (vars |> Seq.mapi (fun i (v, _) -> sprintf "  var %s = frames[%d];" v i) |> String.concat "\n") +
+        "  " + code + "}) })"
+      let frames = [| for (_, data) in vars -> box data |]
+      let outputs = ResizeArray<_>()
+      eval<((string -> unit) -> unit) -> obj[] -> unit> code outputs.Add frames
+      ent.Value <- Some(Outputs(outputs.ToArray()))
+  | Code _ -> failwith "Code in unsupported langauge"
+  | DataFrame(v, rblock) ->
       do! evaluate rblock
       match rblock.Value with
-      | Some(Frames frames) -> ent.Value <- Some(Frame(frames.[v]))
+      | Some(Frames frames) -> 
+          Log.trace("eval", "Frame %s = %O", v, Map.find v frames)
+          ent.Value <- Some(Frame(Map.find v frames))
       | _ -> failwith "R block did not evaluate to Frames"
-  | RCodeBlock(rcode, vars) ->
+  | EntityKind.CodeBlock(lang, rcode, vars) ->
       do! evaluate rcode
       for v in vars do do! evaluate v
-  | JsCodeBlock(code, _) ->
-      ()
   | Notebook ents -> 
       for ent in ents do 
         do! evaluate ent }
@@ -176,13 +205,16 @@ open Wrattler.Html
 
 type State = 
   { Started : bool
-    Nodes : Node<Block> list }
+    Nodes : Node<Block> list
+    SelectedVariables : Map<string, string> }
 
 type Event = 
   | Refresh
+  | DisplayVariable of string * string
 
 let state =
   { Started = false
+    SelectedVariables = Map.empty
     Nodes = parseMarkdown (Markdown.markdown.parse(demo)) }
 
 let startEvaluation trigger state = Async.StartImmediate <| async { 
@@ -197,6 +229,37 @@ let startEvaluation trigger state = Async.StartImmediate <| async {
   with e ->
     Log.exn("test", "Failed: %O", e) }
 
+let rec renderHtmlTree tree =
+  Log.trace("render", "Rendering: %O", box tree)
+  if isString tree then text(unbox tree)
+  elif isArray tree then
+    let arr = unbox<obj[]> tree
+    let contentIdx, props = 
+      if isObject arr.[1] then 
+        let props = JsHelpers.properties(arr.[1])
+        2, [for p in props -> p.key => unbox p.value ]
+      else 1, []
+    h.el(unbox arr.[0]) props [ for i in contentIdx .. arr.Length-1 -> renderHtmlTree arr.[i] ]
+  else failwithf "Unexpected node: %A" tree
+
+let renderTable objs = 
+  Log.trace("render", "Table: %O", box obj)
+  let first = Array.head objs
+  let props = JsHelpers.properties(first)
+  h?table ["class" => "table"] [
+    h?thead [] [ 
+      h?tr [] [
+        for prop in props -> h?th [] [text prop.key]
+      ]
+    ]
+    h?tbody [] [
+      for obj in objs -> 
+        h?tr [] [
+          for prop in props -> h?td [] [ text(string (getProperty obj prop.key))  ]
+        ]
+    ]
+  ]
+
 let render trigger state = 
   if not state.Started then startEvaluation trigger state
   h?div [] [
@@ -204,17 +267,41 @@ let render trigger state =
       match nd.Node with
       | CodeBlock(RSource src | JsSource src) ->
           yield h?textarea ["class" => "form-control"; "rows" => "6"] [ text src ]
+          Log.trace("render", "Rendering output of block: %O", nd.Entity.Value)
           match nd.Entity with
-          | Some { Kind = RCodeBlock(_, vars) } ->
-              let vars = vars |> List.choose (function { Kind = RDataFrame(v, _) } -> Some v | _ -> None)
-              yield h?h3 [] [ text (String.concat "," vars) ]
-          | _ ->
-              yield h?h3 [] [ text ("loading...") ]
+          | Some { Kind = EntityKind.CodeBlock("js", { Kind = EntityKind.Code(_, code, _); Value = Some(Outputs outs) }, _) } ->
+              // TODO: Use entity symbol for h.delayed
+              Log.trace("render", "Rendering output of JS block...")
+              for out, i in Seq.zip outs [0 .. outs.Length-1] do
+                let id = sprintf "output_%d_%d" i (hash code)
+                yield h.delayed id (text "") (fun id -> out id)
 
-      | MarkdownBlock objs ->        
-          yield h?div [] [text (Markdown.markdown.renderJsonML(Markdown.markdown.toHTMLTree(Array.ofList(box "markdown"::objs)))) ] ]
+          | Some { Kind = EntityKind.CodeBlock(_, _, vars) } ->
+              let vars = vars |> List.choose (function { Kind = DataFrame(var, _); Value = Some(Frame value) } -> Some(var, value) | _ -> None)
+              if not (List.isEmpty vars) then
+                let selected = defaultArg (state.SelectedVariables.TryFind(src)) (fst(List.head vars))
+                yield h?ul ["class" => "nav nav-tabs"] [
+                  for v, data in vars do 
+                  yield h?li ["class" => "nav-item"] [
+                    h?a [
+                      "class" => (if v = selected then "nav-link active" else "nav-link")
+                      "click" =!> fun _ _ -> trigger (DisplayVariable(src, v))
+                      "href" => "#" ] [text v]
+                  ]
+                ]
+                for v, data in vars do
+                  if v = selected then 
+                    Log.trace("render", "Data = %O", data)
+                    yield renderTable data
+          | _ ->
+              yield h?p [] [ text ("loading...") ]
+
+      | MarkdownBlock objs ->
+          let tree = Markdown.markdown.toHTMLTree(Array.ofList(box "markdown"::objs)) |> unbox<obj[]>
+          for i in 1 .. tree.Length-1 do yield renderHtmlTree tree.[i] ]
 
 let update state = function
   | Refresh -> { state with Started = true }
+  | DisplayVariable(k, v) -> { state with SelectedVariables = Map.add k v state.SelectedVariables }
 
 createVirtualDomApp "demo" state render update

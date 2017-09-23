@@ -1,4 +1,7 @@
+.vs2015/.vs
 .vscode/
 node_modules/
 paket-files/
 public/bundle.js
+src/obj/
+src/bin/
