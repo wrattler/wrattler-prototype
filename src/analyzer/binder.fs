@@ -3,8 +3,8 @@ open Wrattler.Ast
 
 // ------------------------------------------------------------------------------------------------
 
-//let rservice = "http://wrattler-r-service.azurewebsites.net"
-let rservice = "http://localhost:7101"
+let rservice = "http://wrattler-r-service.azurewebsites.net"
+//let rservice = "http://localhost:7101"
 
 open Wrattler.Common
 
@@ -81,7 +81,7 @@ let bindEntity ctx kind =
   else
     Log.trace("binder", "New: binding %s", formatEntityKind kind)
     let symbol = createSymbol ()
-    let entity = { Kind = kind; Symbol = symbol; Value = None }
+    let entity = { Kind = kind; Symbol = symbol; Value = None; Errors = [] }
     ListDictionary.set symbols (Map.add (code) entity nestedDict) ctx.Table
     entity    
 
@@ -92,7 +92,7 @@ let setEntity ctx node entity =
   entity
 
 let bindNode ctx node = async {
-  match node.Node with 
+  match node.Node.BlockKind with 
   | MarkdownBlock _ -> 
       return ctx, []
 
@@ -108,8 +108,14 @@ let bindNode ctx node = async {
         match f.Value with 
         | Some(Frame data) -> frames.Add(v, data)
         | _ -> ()
-      let! vars = getExports frames codeEnt // TODO: This should not call R repeatedly
-      Log.trace("binder", " -> Exporting variables: %s", String.concat "," vars)
+      let! vars = async {
+        try
+          let! vars = getExports frames codeEnt // TODO: This should not call R repeatedly
+          Log.trace("binder", " -> Exporting variables: %s", String.concat "," vars)
+          return vars
+        with e -> 
+          Log.error("binder", "Getting R exports failed: %s", e)
+          return [] }
 
       let vars = vars |> List.map (fun v -> v, bindEntity ctx (DataFrame(v, codeEnt)))
       let frames = vars |> List.fold (fun frames (v, ent) -> Map.add v ent frames) ctx.Frames
@@ -120,7 +126,7 @@ let bindNode ctx node = async {
 
 /// Create a new binding context - this stores cached entities
 let createContext ev =
-  let root = { Kind = EntityKind.Root; Symbol = createSymbol(); Value = None }
+  let root = { Kind = EntityKind.Root; Symbol = createSymbol(); Value = None; Errors = [] }
   { Table = System.Collections.Generic.Dictionary<_, _>(); 
     Bound = ResizeArray<_>(); Frames = Map.empty; 
     Evaluate = ev

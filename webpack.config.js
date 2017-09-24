@@ -21,6 +21,9 @@ module.exports = {
     filename: 'bundle.js',
     path: resolve('./public'),
   },
+  externals: {
+    monaco: "monaco"
+  },
   resolve: {
     modules: [resolve("./node_modules/")]
   },

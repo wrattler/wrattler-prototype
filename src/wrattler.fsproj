@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="bindings/markdown.fs" />
+    <Compile Include="bindings/monaco.fs" />
     <Compile Include="bindings/virtualdom.fs" />
     <Compile Include="common/common.fs" />
     <Compile Include="common/html.fs" />

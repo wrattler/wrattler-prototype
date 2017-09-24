@@ -1,4 +1,4 @@
-module Fable.Helpers.Markdown
+module Fable.Import.Markdown
 open Fable.Core.JsInterop
 
 type Markdown =

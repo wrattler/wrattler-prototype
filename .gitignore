@@ -1,4 +1,6 @@
 .vs2015/.vs
+.vs2015/bin
+.vs2015/obj
 .vscode/
 node_modules/
 paket-files/

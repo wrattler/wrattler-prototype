@@ -1,4 +1,4 @@
-﻿module Fable.Helpers.Virtualdom
+﻿module Fable.Import.Virtualdom
 
 open Fable.Core
 open Fable.Core.JsInterop

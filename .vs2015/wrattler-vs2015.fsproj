@@ -12,7 +12,7 @@
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <TargetFSharpCoreVersion>4.4.0.0</TargetFSharpCoreVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-    <Name>bindings</Name>
+    <Name>wrattlers</Name>
     <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -23,7 +23,7 @@
     <OutputPath>bin\Debug\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
-    <DocumentationFile>bin\Debug\bindings.XML</DocumentationFile>
+    <DocumentationFile>bin\Debug\wrattler.xml</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -32,7 +32,7 @@
     <OutputPath>bin\Release\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
     <WarningLevel>3</WarningLevel>
-    <DocumentationFile>bin\Release\bindings.XML</DocumentationFile>
+    <DocumentationFile>bin\Release\wrattler.xml</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Fable.Core">
@@ -51,6 +51,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../src/bindings/markdown.fs"><Link>bindings/markdown.fs</Link></Compile>
+    <Compile Include="../src/bindings/monaco.fs"><Link>bindings/monaco.fs</Link></Compile>
     <Compile Include="../src/bindings/virtualdom.fs"><Link>bindings/virtualdom.fs</Link></Compile>
     <Compile Include="../src/common/common.fs"><Link>common/common.fs</Link></Compile>
     <Compile Include="../src/common/html.fs"><Link>common/html.fs</Link></Compile>
