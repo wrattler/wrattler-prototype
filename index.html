@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+<head>
+  <title>Simple Fable App</title>
+  <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="shortcut icon" type="image/png" href="favicon-32x32.png" sizes="32x32" />
+  <link rel="shortcut icon" type="image/png" href="favicon-16x16.png" sizes="16x16" />
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta/css/bootstrap.min.css" 
+    integrity="sha384-/Y6pD6FV/Vv2HJnA6t+vslU6fwYXjCFtcEpHbNJ0lyAFsXTsjBbfaDjzALeQsN6M" crossorigin="anonymous">  
+  <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" 
+    integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vega/3.0.2/vega.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vega-lite/2.0.0-rc3/vega-lite.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vega-embed/3.0.0-beta.20/vega-embed.js"></script>
+
+  <style type="text/css">
+    .block-markdown {
+      padding:10px;
+    }
+    .block-input {
+      padding:10px 20px 10px 20px;
+      margin:10px 20px 0px 20px;
+      border:1px solid #e0e0e0;
+      border-radius:2px;
+      border-bottom-style:none;
+    }
+    .block-output {
+      padding:10px 20px 10px 20px;
+      margin:0px 20px 10px 20px;
+      border:1px solid #e0e0e0;
+      border-radius:2px;
+      border-top-style:none;
+    }
+
+    .tools {
+      text-align:right;
+      margin-right:20px;
+    }
+    .tools a {
+      font-size:10pt;
+      text-decoration:none;
+      color:#c0c0c0;
+      margin-left:15px;
+    }
+    .tools a i {
+      margin-right:5px;
+    }
+    .tools a:hover {
+      color:#909090;
+    }
+
+
+    
+    .nav { 
+      margin:10px 0px 10px 0px; 
+    }
+    .preview .table th {
+      border-top-style:none;
+    }
+    .preview .table th, .preview .table td {
+      padding:4px;
+      font-size:11pt;
+    }
+    .preview {
+      max-height:400px;
+      overflow-y:scroll;
+    }
+    .preview::-webkit-scrollbar  {
+      width:8px;
+      height:8px;
+      background:#f0f0f0;
+    }
+    .preview::-webkit-scrollbar-track {
+      background:transparent;
+    }
+    .preview::-webkit-scrollbar-thumb {
+      border-radius:4px;
+      background-color:#c0c0c0;
+    }
+
+  </style>
+  
+</head>
+<body>
+  <div class="container"><div class="row"><div class="col-sm-12">
+    <div id="demo"></div>
+    <div id="ed"></div>
+  </div></div></div>
+
+<!--   
+  <script>var require = { paths: { 'vs': 'lib/vs' } };</script>
+  <script src="lib/vs/loader.js"></script>
+  <script src="lib/vs/editor/editor.main.nls.js"></script>
+  <script src="lib/vs/editor/editor.main.js"></script>
+  <script src="bundle.js"></script> 
+-->
+ 
+    <script src="lib/require.js"></script>
+    <script>
+        require.config({
+            paths: { 'vs': 'lib/vs' },
+            map: {
+                "*": {
+                    "monaco": "vs/editor/editor.main"
+                }
+            }
+        });
+        require(["monaco"], function(_) {
+          require(["bundle"]);
+        });
+    </script>
+<!--  -->
+</body>
+</html>
