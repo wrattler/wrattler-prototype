@@ -50,6 +50,9 @@ let formatDateTime(d:obj) : string = failwith "!"
 [<Emit("(typeof($0)=='object')")>]
 let isObject(n:obj) : bool = failwith "!"
 
+[<Emit("(typeof($0)=='string')")>] 
+let isString (o:obj) : bool = failwith "JS"
+
 [<Emit("Array.isArray($0)")>]
 let isArray(n:obj) : bool = failwith "!"
 
@@ -111,6 +114,18 @@ let isLocalHost() =
 let mutable enabledCategories = 
   if not (isLocalHost ()) then set []
   else set ["*"] 
+
+let getColor =   
+  let colorMap = System.Collections.Generic.Dictionary<_, _>()
+  let mutable index = -1
+  let colors = 
+    [| "#393b79"; "#637939"; "#8c6d31"; "#843c39"; "#7b4173" 
+       "#3182bd"; "#e6550d"; "#31a354"; "#756bb1"; "#636363" |]
+  fun cat -> 
+    if not (colorMap.ContainsKey(cat)) then
+      index <- (index + 1) % colors.Length
+      colorMap.Add(cat, colors.[index])
+    colorMap.[cat]
   
 type Log =
   static member setEnabled(cats) = enabledCategories <- cats
@@ -125,7 +140,7 @@ type Log =
       let prefix = sprintf "[%s:%s:%s:%s] %s: " (p2 dt.Hour) (p2 dt.Minute) (p2 dt.Second) (p4 dt.Millisecond) category
       let color = 
         match level with
-        | "TRACE" -> "color:#808080"
+        | "TRACE" -> "color:" + getColor category
         | "EXCEPTION" -> "color:#c00000"
         | "ERROR" -> "color:#900000"
         | _ -> ""

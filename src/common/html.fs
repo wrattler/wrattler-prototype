@@ -117,6 +117,9 @@ let renderTo (node:HTMLElement) dom =
   node.appendChild(el) |> ignore
   f()
 
+type VirtualDomApp<'TEvent> = 
+  { Trigger : 'TEvent -> unit }
+
 let createVirtualDomAsyncApp id initial r u = 
   let event = new Event<'T>()
   let trigger e = event.Trigger(e)  
@@ -150,7 +153,7 @@ let createVirtualDomApp id initial r u =
   let mutable state = initial
 
   let handleEvent evt = 
-    state <- match evt with Some e -> u state e | _ -> state
+    state <- match evt with Some e -> u trigger state e | _ -> state
     let newTree = r trigger state |> renderVirtual
     let patches = Virtualdom.diff tree newTree
     container <- Virtualdom.patch container patches
@@ -158,6 +161,7 @@ let createVirtualDomApp id initial r u =
   
   handleEvent None
   event.Publish.Add(Some >> handleEvent)
+  { Trigger = trigger }
   
 let text s = Text(s)
 let (=>) k v = k, Attribute(v)

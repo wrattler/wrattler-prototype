@@ -54,6 +54,10 @@
     <Compile Include="../src/bindings/virtualdom.fs"><Link>bindings/virtualdom.fs</Link></Compile>
     <Compile Include="../src/common/common.fs"><Link>common/common.fs</Link></Compile>
     <Compile Include="../src/common/html.fs"><Link>common/html.fs</Link></Compile>
+    <Compile Include="../src/ast/ast.fs"><Link>ast/ast.fs</Link></Compile>
+    <Compile Include="../src/ast/astops.fs"><Link>ast/astops.fs</Link></Compile>
+    <Compile Include="../src/analyzer/binder.fs"><Link>analyzer/binder.fs</Link></Compile>
+    <Compile Include="../src/analyzer/interpreter.fs"><Link>analyzer/interpreter.fs</Link></Compile>
     <Compile Include="../src/main.fs"><Link>main.fs</Link></Compile>
   </ItemGroup>
   <PropertyGroup>
