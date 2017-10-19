@@ -7,3 +7,4 @@ paket-files/
 public/bundle.js
 src/obj/
 src/bin/
+.vs

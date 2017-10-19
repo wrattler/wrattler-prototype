@@ -8,7 +8,7 @@
     <ProjectGuid>278a68fc-0256-417c-af13-9a4af7381ccf</ProjectGuid>
     <OutputType>Library</OutputType>
     <RootNamespace>bindings</RootNamespace>
-    <AssemblyName>bindings</AssemblyName>
+    <AssemblyName>wrattler</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <TargetFSharpCoreVersion>4.4.0.0</TargetFSharpCoreVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -50,16 +50,39 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="../src/bindings/markdown.fs"><Link>bindings/markdown.fs</Link></Compile>
-    <Compile Include="../src/bindings/monaco.fs"><Link>bindings/monaco.fs</Link></Compile>
-    <Compile Include="../src/bindings/virtualdom.fs"><Link>bindings/virtualdom.fs</Link></Compile>
-    <Compile Include="../src/common/common.fs"><Link>common/common.fs</Link></Compile>
-    <Compile Include="../src/common/html.fs"><Link>common/html.fs</Link></Compile>
-    <Compile Include="../src/ast/ast.fs"><Link>ast/ast.fs</Link></Compile>
-    <Compile Include="../src/ast/astops.fs"><Link>ast/astops.fs</Link></Compile>
-    <Compile Include="../src/analyzer/binder.fs"><Link>analyzer/binder.fs</Link></Compile>
-    <Compile Include="../src/analyzer/interpreter.fs"><Link>analyzer/interpreter.fs</Link></Compile>
-    <Compile Include="../src/main.fs"><Link>main.fs</Link></Compile>
+    <Compile Include="../src/bindings/markdown.fs">
+      <Link>bindings/markdown.fs</Link>
+    </Compile>
+    <Compile Include="../src/bindings/monaco.fs">
+      <Link>bindings/monaco.fs</Link>
+    </Compile>
+    <Compile Include="../src/bindings/virtualdom.fs">
+      <Link>bindings/virtualdom.fs</Link>
+    </Compile>
+    <Compile Include="../src/common/common.fs">
+      <Link>common/common.fs</Link>
+    </Compile>
+    <Compile Include="../src/common/html.fs">
+      <Link>common/html.fs</Link>
+    </Compile>
+    <Compile Include="../src/common/datastore.fs">
+      <Link>common/datastore.fs</Link>
+    </Compile>
+    <Compile Include="../src/ast/ast.fs">
+      <Link>ast/ast.fs</Link>
+    </Compile>
+    <Compile Include="../src/ast/astops.fs">
+      <Link>ast/astops.fs</Link>
+    </Compile>
+    <Compile Include="../src/analyzer/binder.fs">
+      <Link>analyzer/binder.fs</Link>
+    </Compile>
+    <Compile Include="../src/analyzer/interpreter.fs">
+      <Link>analyzer/interpreter.fs</Link>
+    </Compile>
+    <Compile Include="../src/main.fs">
+      <Link>main.fs</Link>
+    </Compile>
   </ItemGroup>
   <PropertyGroup>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>

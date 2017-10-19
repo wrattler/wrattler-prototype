@@ -8,6 +8,7 @@
     <Compile Include="bindings/virtualdom.fs" />
     <Compile Include="common/common.fs" />
     <Compile Include="common/html.fs" />
+    <Compile Include="common/datastore.fs" />
     <Compile Include="ast/ast.fs" />
     <Compile Include="ast/astops.fs" />
     <Compile Include="analyzer/binder.fs" />

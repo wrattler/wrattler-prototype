@@ -16,8 +16,8 @@ type Error =
 type Value = 
   | Nothing
   | Outputs of (string -> unit)[]
-  | Frame of obj[]
-  | Frames of Map<string, obj[]>
+  | Frame of string
+  | Frames of Map<string, string>
 
 type Name = string
 

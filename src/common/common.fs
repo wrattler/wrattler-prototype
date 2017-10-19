@@ -7,11 +7,24 @@ open System.Collections.Generic
 
 module FsOption = Microsoft.FSharp.Core.Option
 
+[<Emit("""(function(s){
+  var hash = 0;
+  if (s.length == 0) return hash;
+  for (var i = 0; i < s.length; i++) {
+    var char = s.charCodeAt(i);
+    hash = ((hash<<5)-hash)+char;
+    hash = hash & hash; 
+  }
+  var res = Math.abs(hash).toString(16);
+  while(res.length < 8) res = '0' + res;
+  return res; })($0)""")>]
+let getHashCode (code:string) : string = failwith "JS"
+
 [<Emit("eval($0)")>]
-let eval<'T> (code:string) : 'T = failwith "never"
+let eval<'T> (code:string) : 'T = failwith "JS"
 
 [<Emit("$0[$1]")>]
-let getProperty<'T> (obj:obj) (name:string) : 'T = failwith "never"
+let getProperty<'T> (obj:obj) (name:string) : 'T = failwith "JS"
 
 [<Emit("parseInt($0, $1)")>]
 let parseInt (s:string) (b:int) : int = failwith "JS"
@@ -273,10 +286,16 @@ module Async =
     | [] -> return st }
 
 /// Symbol is a unique immutable identiifer (we use JavaScript symbols)
-type Symbol = interface end
+type Symbol = 
+  { ID : string; Unique : obj }
+  override x.ToString() = x.ID
 
-[<Emit("Symbol()")>]
-let createSymbol () = { new Symbol }
+module SymbolHelpers =   
+  [<Emit("Symbol()")>]
+  let nativeSymbol() : obj = obj()
+  
+let createSymbol (s:string) = { ID = s; Unique = SymbolHelpers.nativeSymbol() }
+let createAutoSymbol () = { ID = ""; Unique = SymbolHelpers.nativeSymbol() }
 
 type ListDictionaryNode<'K, 'T> = 
   { mutable Result : 'T option

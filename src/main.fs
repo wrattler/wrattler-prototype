@@ -137,24 +137,28 @@ let rec renderHtmlTree tree =
     h.el(unbox arr.[0]) props [ for i in contentIdx .. arr.Length-1 -> renderHtmlTree arr.[i] ]
   else failwithf "Unexpected node: %A" tree
 
-let renderTable objs = 
-  let first = Array.head objs
-  let props = JsHelpers.properties(first)
-  h?div ["class" => "preview"] [
-    h?table ["class" => "table"] [
-      h?thead [] [ 
-        h?tr [] [
-          for prop in props -> h?th [] [text prop.key]
+let renderTable url trigger = 
+  match Datastore.tryFetchPreview url trigger with 
+  | None ->
+      h?div ["class" => "preview"] [ h?p [] [text "Loading..."] ]
+  | Some objs ->
+      let first = Array.head objs
+      let props = JsHelpers.properties(first)
+      h?div ["class" => "preview"] [
+        h?table ["class" => "table"] [
+          h?thead [] [ 
+            h?tr [] [
+              for prop in props -> h?th [] [text prop.key]
+            ]
+          ]
+          h?tbody [] [
+            for obj in objs -> 
+              h?tr [] [
+                for prop in props -> h?td [] [ text(string (getProperty obj prop.key))  ]
+              ]
+          ]
         ]
       ]
-      h?tbody [] [
-        for obj in objs -> 
-          h?tr [] [
-            for prop in props -> h?td [] [ text(string (getProperty obj prop.key))  ]
-          ]
-      ]
-    ]
-  ]
 
 open Fable.Import.Monaco
 
@@ -246,7 +250,7 @@ let render trigger state =
                   ]
                   for v, data in vars do
                     if v = selected then 
-                      yield renderTable data
+                      yield renderTable data (fun _ -> trigger Refresh)
             | _ ->
                 yield h?p [] [ text ("loading...") ]
           ]

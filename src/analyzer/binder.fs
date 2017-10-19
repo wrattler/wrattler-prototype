@@ -3,17 +3,18 @@ open Wrattler.Ast
 
 // ------------------------------------------------------------------------------------------------
 
-let rservice = "http://wrattler-r-service.azurewebsites.net"
-//let rservice = "http://localhost:7101"
+//let rservice = "http://wrattler-r-service.azurewebsites.net"
+let rservice = "http://localhost:7101"
 
 open Wrattler.Common
 
 type RFrame = 
   { name : string 
-    data : obj[] }
+    url : string }
 
 type RInput = 
   { code : string 
+    hash : string
     frames : RFrame[] }
 
 type RExportsType = 
@@ -27,16 +28,16 @@ type RExportsVar =
   { variable : string
     ``type`` : RExportsType }
 
-let evalRCode (frames:seq<Name * obj[]>) code = async {
-  let req = { code = code; frames = [| for n, f in frames -> { name = n; data = f } |] }
+let evalRCode hash (frames:seq<Name * string>) code = async {
+  let req = { code = code; hash = hash; frames = [| for n, f in frames -> { name = n; url = f } |] }
   let! json = Http.Request("POST", rservice + "/eval", jsonStringify req)
   let vars = unbox<RFrame[]> (jsonParse json)
-  return Frames(Map.ofList [ for v in vars -> v.name, v.data ]) }
+  return Frames(Map.ofList [ for v in vars -> v.name, v.url ]) }
   
-let getExports (frames:seq<Name * obj[]>) ent = async {
+let getExports hash (frames:seq<Name * string>) ent = async {
   match ent with 
   | { Kind = Code("r", code, _) } ->    
-      let req = { code = code; frames = [| for n, f in frames -> { name = n; data = f } |] }
+      let req = { code = code; hash = hash; frames = [| for n, f in frames -> { name = n; url = f } |] }
       let! json = Http.Request("POST", rservice + "/exports", jsonStringify req)
       let vars = unbox<RExportsVar[]> (jsonParse json)
       return [ for v in vars -> v.variable ]
@@ -80,7 +81,8 @@ let bindEntity ctx kind =
     nestedDict.[code]
   else
     Log.trace("binder", "New: binding %s", formatEntityKind kind)
-    let symbol = createSymbol ()
+    let full = code + String.concat "\n" [ for a in antecedents -> a.Symbol.ToString() ]
+    let symbol = createSymbol (getHashCode full)
     let entity = { Kind = kind; Symbol = symbol; Value = None; Errors = [] }
     ListDictionary.set symbols (Map.add (code) entity nestedDict) ctx.Table
     entity    
@@ -110,7 +112,7 @@ let bindNode ctx node = async {
         | _ -> ()
       let! vars = async {
         try
-          let! vars = getExports frames codeEnt // TODO: This should not call R repeatedly
+          let! vars = getExports (codeEnt.Symbol.ToString()) frames codeEnt // TODO: This should not call R repeatedly
           Log.trace("binder", " -> Exporting variables: %s", String.concat "," vars)
           return vars
         with e -> 
@@ -126,7 +128,7 @@ let bindNode ctx node = async {
 
 /// Create a new binding context - this stores cached entities
 let createContext ev =
-  let root = { Kind = EntityKind.Root; Symbol = createSymbol(); Value = None; Errors = [] }
+  let root = { Kind = EntityKind.Root; Symbol = createSymbol "root"; Value = None; Errors = [] }
   { Table = System.Collections.Generic.Dictionary<_, _>(); 
     Bound = ResizeArray<_>(); Frames = Map.empty; 
     Evaluate = ev
