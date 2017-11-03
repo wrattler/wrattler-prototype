@@ -1,4 +1,4 @@
-module Wrattler.Ast.Astops
+module Wrattler.Ast.AstOps
 
 // ------------------------------------------------------------------------------------------------
 
@@ -9,7 +9,8 @@ let formatEntityKind = function
   | EntityKind.CodeBlock(lang, _, _) -> lang + " code block"
   | EntityKind.DataFrame(var, _) -> "frame " + var
   | EntityKind.Notebook(_) -> "notebook"
-  
+  | EntityKind.CustomEntity ent -> ent.FormatEntity()
+   
 /// Return entity name (or anonymous) and all its antecedants
 let rec entityCodeAndAntecedents = function
   | EntityKind.Root -> [], ""
@@ -17,7 +18,11 @@ let rec entityCodeAndAntecedents = function
   | EntityKind.CodeBlock(lang, code, vars) -> code::vars, sprintf "<codeblock lang='%s'/>" lang
   | EntityKind.DataFrame(var, block) -> [block], sprintf "<var name='%s'/>" var
   | EntityKind.Notebook(blocks) -> blocks, "<notebook/>"
+  | EntityKind.CustomEntity ent -> ent.GetCodeAndAntecedents()
   
+// Provide easy access to entity's antecedents
+type Entity with
+  member x.Antecedents = let ans, _ = entityCodeAndAntecedents x.Kind in ans
 
 
 

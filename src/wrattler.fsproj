@@ -3,6 +3,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="bindings/babel.fs" />
     <Compile Include="bindings/markdown.fs" />
     <Compile Include="bindings/monaco.fs" />
     <Compile Include="bindings/virtualdom.fs" />
@@ -12,7 +13,17 @@
     <Compile Include="ast/ast.fs" />
     <Compile Include="ast/astops.fs" />
     <Compile Include="analyzer/binder.fs" />
-    <Compile Include="analyzer/interpreter.fs" />
+    <Compile Include="langs.fs" />
+    <Compile Include="builtin/interpreter.fs" />
+    <Compile Include="gamma/ast.fs" />
+    <Compile Include="gamma/astops.fs" />
+    <Compile Include="gamma/errors.fs" />
+    <Compile Include="gamma/tokenizer.fs" />
+    <Compile Include="gamma/parser.fs" />
+    <Compile Include="gamma/binder.fs" />
+    <Compile Include="gamma/typechecker.fs" />
+    <Compile Include="gamma/interpreter.fs" />
+    <Compile Include="gamma/gamma.fs" />
     <Compile Include="main.fs" />
   </ItemGroup>
   <Import Project="..\.paket\Paket.Restore.targets" />

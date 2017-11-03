@@ -45,16 +45,15 @@ let getExports hash (frames:seq<Name * string>) ent = async {
 
 // ------------------------------------------------------------------------------------------------
 
-open Wrattler.Ast.Astops
+open Wrattler.Ast.AstOps
 
 /// Represents case of the EntityKind union
 type EntityCode = string
 
-type Range = unit // TODO
-
 /// As we bind, we keep root entity, current scope & variables in scope
 type BindingContext = 
   { //GlobalValues : Map<Name, Entity>
+    Languages : Map<string, BindingContext -> CustomBlockKind -> Entity * list<string * Entity>>
     Frames : Map<Name, Entity>  
     Root : Entity
     
@@ -68,8 +67,24 @@ type BindingContext =
     /// Collects all bound entities and their ranges
     Bound : ResizeArray<Range * Entity> }
 
+/// Represents result of binding syntax tree to entities 
+/// (provides access to all bound entities & children lookup function)
+type BindingResult(ents:(Range * Entity)[]) = 
+  let childrenLookup = 
+    let res = System.Collections.Generic.Dictionary<Symbol, ResizeArray<Entity>>()
+    let add a e = 
+      if not (res.ContainsKey(a)) then res.Add(a, ResizeArray())
+      res.[a].Add(e)
+    for _, e in ents do
+      for a in e.Antecedents do
+        add a.Symbol e
+    res 
+  member x.Entities = ents
+  member x.GetChildren(ent:Entity) = 
+    match childrenLookup.TryGetValue(ent.Symbol) with true, res -> res.ToArray() | _ -> [||]
+
 /// Lookup entity (if it can be reused) or create & cache a new one
-let bindEntity ctx kind =
+let bindEntity ctx lang kind =
   let antecedents, code = entityCodeAndAntecedents kind
   let symbols = ctx.Root::antecedents |> List.map (fun a -> a.Symbol)
   let nestedDict = 
@@ -77,19 +92,19 @@ let bindEntity ctx kind =
     | None -> Map.empty
     | Some res -> res
   if nestedDict.ContainsKey code then 
-    Log.trace("binder", "Cached: binding %s", formatEntityKind kind)
+    Log.trace("binder", "Cached %s binding: %s", lang, formatEntityKind kind)
     nestedDict.[code]
   else
-    Log.trace("binder", "New: binding %s", formatEntityKind kind)
+    Log.trace("binder", "New %s binding: %s", lang, formatEntityKind kind)
     let full = code + String.concat "\n" [ for a in antecedents -> a.Symbol.ToString() ]
     let symbol = createSymbol (getHashCode full)
-    let entity = { Kind = kind; Symbol = symbol; Value = None; Errors = [] }
+    let entity = { Language = lang; Kind = kind; Symbol = symbol; Value = None; Errors = []; Type = None; Meta = [] }
     ListDictionary.set symbols (Map.add (code) entity nestedDict) ctx.Table
     entity    
 
 /// Assign entity to a node in parse tree
 let setEntity ctx node entity = 
-  ctx.Bound.Add((), entity) // TODO: node.Range
+  ctx.Bound.Add({Start=12345;End=12345}, entity) // TODO: node.Range
   node.Entity <- Some entity
   entity
 
@@ -98,10 +113,15 @@ let bindNode ctx node = async {
   | MarkdownBlock _ -> 
       return ctx, []
 
-  | CodeBlock(code) ->
+  | CustomBlock(block) ->
+      let blockEnt, vars = ctx.Languages.[block.Language] ctx block 
+      let blockEnt = blockEnt |> setEntity ctx node
+      let frames = vars |> List.fold (fun frames (v, ent) -> Map.add v ent frames) ctx.Frames
+      return { ctx with Frames = frames }, [blockEnt]
+
+  | CodeBlock(lang, code) ->
       let vars = Map.toList ctx.Frames |> List.map snd
-      let lang, code = match code with RSource code -> "r", code | JsSource code -> "js", code
-      let codeEnt = bindEntity ctx (Code(lang, code, vars))
+      let codeEnt = bindEntity ctx lang (Code(lang, code, vars))
 
       Log.trace("binder", " -> Known variables: %s", String.concat "," (Seq.map fst (Map.toSeq ctx.Frames)))
       let frames = ResizeArray<_>()
@@ -119,19 +139,20 @@ let bindNode ctx node = async {
           Log.error("binder", "Getting R exports failed: %s", e)
           return [] }
 
-      let vars = vars |> List.map (fun v -> v, bindEntity ctx (DataFrame(v, codeEnt)))
+      let vars = vars |> List.map (fun v -> v, bindEntity ctx lang (DataFrame(v, codeEnt)))
       let frames = vars |> List.fold (fun frames (v, ent) -> Map.add v ent frames) ctx.Frames
-      let blockEnt = bindEntity ctx (EntityKind.CodeBlock(lang, codeEnt, List.map snd vars)) |> setEntity ctx node
+      let blockEnt = bindEntity ctx lang (EntityKind.CodeBlock(lang, codeEnt, List.map snd vars)) |> setEntity ctx node
       return { ctx with Frames = frames }, [blockEnt] }
 
 // ------------------------------------------------------------------------------------------------
 
 /// Create a new binding context - this stores cached entities
-let createContext ev =
-  let root = { Kind = EntityKind.Root; Symbol = createSymbol "root"; Value = None; Errors = [] }
+let createContext langs ev =
+  let root = { Language = "system"; Kind = EntityKind.Root; Symbol = createSymbol "root"; Value = None; Errors = []; Type = None; Meta = [] }
   { Table = System.Collections.Generic.Dictionary<_, _>(); 
     Bound = ResizeArray<_>(); Frames = Map.empty; 
     Evaluate = ev
+    Languages = langs
     //GlobalValues = Map.ofList [ for e in globals -> { Name = e.Name }, e ]
     Root = root }
 
@@ -146,5 +167,6 @@ let bind ctx nodes =
   
   async { 
     let! bound = loop ctx [] nodes
-    return bindEntity ctx (Notebook(List.ofSeq bound)) }
+    let nbEnt = bindEntity ctx "system" (Notebook(List.ofSeq bound)) 
+    return nbEnt, BindingResult(ctx.Bound.ToArray()) }
 

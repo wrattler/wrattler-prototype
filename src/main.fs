@@ -1,4 +1,5 @@
 module Wrattler.Main
+#nowarn "40"
 
 open Wrattler.Ast
 open Wrattler.Binder
@@ -13,6 +14,12 @@ let demo = """
 This is a sample notebook showing the current state of the project. It has some support for
 _polyglot programming_ - you can combine some R blocks to do data analysis with some 
 JavaScript blocks to do visualizations
+
+### Testing The Gamma
+
+```gamma
+let test = 40 + "hello"
+```
 
 ### Analysing data using R
 
@@ -58,6 +65,91 @@ Institute website](http://turing.ac.uk), which you'll, no doubt, find very inter
 """
 
 // ------------------------------------------------------------------------------------------------
+open Wrattler.Languages
+open Wrattler.Ast.AstOps
+
+let recursiveAnalyzer result = 
+  { new Analyzer<_, _, _> with 
+      member x.CreateContext(_) = null
+      member x.Analyze(ent, ctx) = async { 
+        for ant in ent.Antecedents do 
+          do! ctx.Analyze(ant, ctx.Context) 
+        return result } }
+
+let defaultTypeChecker = recursiveAnalyzer { new Type } 
+let defaultInterpreter = recursiveAnalyzer Value.Nothing
+
+let builtinInterprter evalf = 
+  { new Analyzer<unit, Wrattler.Ast.Value, _> with
+      member x.CreateContext(_) = null
+      member x.Analyze(ent, ctx) = evalf ctx ent }
+
+let rlang = 
+  { new LanguagePlugin<obj, obj> with
+      member x.Bind(_, _) = failwith "R binder"
+      member x.TypeChecker = None
+      member x.Interpreter = Some(builtinInterprter Interpreter.evalR)
+      member x.Parse(code) = 
+        CodeBlock("r", code), [] }
+
+let jslang = 
+  { new LanguagePlugin<obj, obj> with
+      member x.Bind(_, _) = failwith "JS binder"
+      member x.Interpreter = Some(builtinInterprter Interpreter.evalJs)
+      member x.TypeChecker = None
+      member x.Parse(code) = 
+        CodeBlock("javascript", code), [] }
+
+let syslang = 
+  { new LanguagePlugin<obj, obj> with
+      member x.Bind(_, _) = failwith "sys binder"
+      member x.TypeChecker = None
+      member x.Interpreter = None
+      member x.Parse(code) = failwith "sys parser" }
+
+let languages : Map<string, LanguagePlugin<obj, obj>> = 
+  [ "system", syslang
+    "r", rlang
+    "javascript", jslang
+    "gamma", unbox Gamma.Plugin.language ] |> Map.ofSeq
+ 
+let rec createAnalyzerContext kind checker (getAnalyzer:_ -> Analyzer<_, _, _>) setResult input (gctx:Lazy<_>) langName (lang:LanguagePlugin<obj, obj>) = 
+  { new AnalyzerContext<obj> with
+        member x.GlobalContext = gctx.Value
+        member x.Context = getAnalyzer(lang).CreateContext(input)
+        member x.Analyze(ent, ctx) = async {
+          if not (checker ent) then 
+            Log.trace(kind, "Entity: %s", AstOps.formatEntityKind ent.Kind)
+            // TODO: DO not create new contexts if it has not changed
+            let rec ntctx = createAnalyzerContext kind checker getAnalyzer setResult input (lazy ngctx) langName lang
+            and ngctx = { gctx.Value with Contexts = gctx.Value.Contexts.Add(langName, ntctx) }
+            let ctx = gctx.Value.Contexts.[ent.Language]
+            let errorCount = ctx.GlobalContext.Errors.Count
+            let! res = getAnalyzer(languages.[ent.Language]).Analyze(ent, ctx) 
+            ent.Errors <- ent.Errors @ [ for i in errorCount .. ctx.GlobalContext.Errors.Count - 1 -> ctx.GlobalContext.Errors.[i] ]
+            Log.trace(kind, "Entity %s, result:  %O", AstOps.formatEntityKind ent.Kind, res)
+            setResult ent res } }
+
+let createCheckingContext = 
+  createAnalyzerContext "typechecker"
+    (fun ent -> ent.Type.IsSome)
+    (fun lang -> defaultArg lang.TypeChecker defaultTypeChecker)
+    (fun ent typ -> ent.Type <- Some typ)
+
+let createInterpreterContext = 
+  createAnalyzerContext "interpreter"
+    (fun ent -> ent.Value.IsSome)
+    (fun lang -> defaultArg lang.Interpreter defaultInterpreter)
+    (fun ent res -> ent.Value <- Some res)
+
+let startAnalyzer createContext (ent:Entity) = async {
+  let rec gctx = 
+    let langContexts = languages |> Map.map (createContext (lazy gctx))
+    GlobalAnalyzerContext.Create(langContexts)
+  do! gctx.Contexts.[ent.Language].Analyze(ent, gctx.Contexts.[ent.Language])
+  Log.trace("typechecker", "Errors: %O", gctx.Errors.ToArray()) }
+
+// ------------------------------------------------------------------------------------------------
 
 let (|MarkdownNode|_|) name (tree:obj) = 
   if isArray tree then 
@@ -76,25 +168,29 @@ let parseMarkdown tree =
     match pars with 
     | MarkdownNode "para" [MarkdownNode "inlinecode" [body]]::rest ->
         if not (List.isEmpty acc) then
-          yield { Node = { Symbol = blockId(); BlockKind = MarkdownBlock(List.rev acc) }; Entity = None }
+          yield { Node = { Symbol = blockId(); BlockKind = MarkdownBlock(List.rev acc); Errors = [] }; Entity = None; Range = { Start = 0; End = 0; } }
 
         let body = unbox<string> body
         let start = body.IndexOfAny [| '\r'; '\n' |]
-        match body.[0 .. start].Trim(), body.[start..].Trim() with 
-        | "r", body -> yield { Node = { Symbol = blockId(); BlockKind = CodeBlock(RSource(body)) }; Entity = None }
-        | "javascript", body -> yield { Node = { Block.Symbol = blockId(); BlockKind = CodeBlock(JsSource(body)) }; Entity = None }
-        | _ -> failwith "Unsupported langauge..."
+        let lang, body = body.[0 .. start].Trim(), body.[start..].Trim() 
+        match languages.TryFind(lang) with
+        | Some lang ->
+            let block, errors = lang.Parse(body)
+            yield { Node = { Symbol = blockId(); BlockKind = block; Errors = errors }; Entity = None; Range = { Start = 0; End = body.Length } } 
+        | _ ->
+            failwithf "Unsupported language '%s'" lang
 
         yield! loop [] rest
     | node::rest ->
         yield! loop (node::acc) rest
     | [] ->
         if not (List.isEmpty acc) then
-          yield { Node = { Symbol = blockId(); BlockKind = MarkdownBlock(List.rev acc) }; Entity = None } }
+          yield { Node = { Symbol = blockId(); BlockKind = MarkdownBlock(List.rev acc); Errors = [] }; Entity = None; Range = { Start = 0; End = 0 } } }
 
   match tree with 
   | MarkdownNode "markdown" body -> List.ofSeq (loop [] body)
   | _ -> []
+
 
 // ------------------------------------------------------------------------------------------------
 
@@ -112,15 +208,19 @@ type Event =
   | DisplayVariable of string * string
 
 let state =
-  { BindingContext = Binder.createContext Interpreter.evaluate
+  let binders = languages |> Map.map (fun _ v a b -> v.Bind(a, b))
+  { BindingContext = Binder.createContext binders (startAnalyzer (createInterpreterContext ()))
     SelectedVariables = Map.empty
     Nodes = parseMarkdown (Markdown.markdown.parse(demo)) }
 
 let startEvaluation trigger state = Async.StartImmediate <| async { 
   try
-    let! bound = Binder.bind state.BindingContext state.Nodes
+    let! bound, bindingResult = Binder.bind state.BindingContext state.Nodes
     trigger (UpdateNodes state.Nodes)
-    do! Interpreter.evaluate bound
+    do! startAnalyzer (createCheckingContext bindingResult) bound
+    //let evals = languages |> Map.map (fun _ l -> l.Evaluate)
+    //do! Interpreter.evaluate evals bound
+    do! startAnalyzer (createInterpreterContext ()) bound    
     trigger Refresh
   with e ->
     Log.exn("main", "Failed: %O", e) }
@@ -209,7 +309,14 @@ let render trigger state =
   h.stable [
     for index, nd in Seq.zip [0 .. state.Nodes.Length-1] state.Nodes do
       match nd.Node with
-      | { Symbol = sym; BlockKind = CodeBlock(RSource src | JsSource src) } ->
+      | { Symbol = sym; BlockKind = CustomBlock(block) } ->
+          yield sym, h?div [] [ 
+            match nd.Entity with 
+            | Some ent -> yield h?p [] [ text (sprintf "Custom: Type: %A, Errors: %A" ent.Type ent.Errors) ]
+            | None -> yield h?p [] [ text ("Custom: No entity") ]
+          ]
+
+      | { Symbol = sym; BlockKind = CodeBlock(lang, src) } ->
           yield sym, h.custom 
             (fun elid ->
               h?div ["class" => "block-input"] [
@@ -219,7 +326,6 @@ let render trigger state =
                 h?div ["id" => elid + "_editor" ] []
               ] |> renderTo (Browser.document.getElementById(elid))
 
-              let lang = match nd.Node.BlockKind with CodeBlock(RSource _) -> "r" | _ -> "javascript"
               let ed = createMonacoEditor (elid + "_editor") lang src 
               ed.onKeyDown(fun ke -> 
                 if ke.altKey && ke.keyCode = KeyCode.Enter then 
@@ -229,7 +335,7 @@ let render trigger state =
 
           yield sym + "-output", h?div ["class" => "block-output"] [
             match nd.Entity with
-            | Some { Kind = EntityKind.CodeBlock("js", { Kind = EntityKind.Code(_, code, _); Value = Some(Outputs outs) }, _) } ->
+            | Some { Kind = EntityKind.CodeBlock("javascript", { Kind = EntityKind.Code(_, code, _); Value = Some(Outputs outs) }, _) } ->
                 // TODO: Use entity symbol for h.delayed
                 for out, i in Seq.zip outs [0 .. outs.Length-1] do
                   let id = sprintf "output_%d_%d" i (hash code)
@@ -272,10 +378,9 @@ let update trigger state evt =
         state.Nodes 
         |> List.mapi (fun j node ->
           match node.Node.BlockKind with 
-          | CodeBlock(RSource _) when i = j -> { node.Node with BlockKind = CodeBlock(RSource newCode) }
-          | CodeBlock(JsSource _) when i = j -> { node.Node with BlockKind = CodeBlock(JsSource newCode) }
-          | _ -> node.Node)
-        |> List.map (fun node -> { Node = node; Entity = None })
+          | CodeBlock(lang, _) when i = j -> node.Range, { node.Node with BlockKind = CodeBlock(lang, newCode) }
+          | _ -> node.Range, node.Node)
+        |> List.map (fun (rng, node) -> { Node = node; Range = rng; Entity = None })
       startEvaluation trigger { state with Nodes = nodes }
       state
 

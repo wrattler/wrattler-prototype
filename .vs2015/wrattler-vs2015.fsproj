@@ -50,6 +50,9 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="../src/bindings/babel.fs">
+      <Link>bindings/babel.fs</Link>
+    </Compile>
     <Compile Include="../src/bindings/markdown.fs">
       <Link>bindings/markdown.fs</Link>
     </Compile>
@@ -77,8 +80,38 @@
     <Compile Include="../src/analyzer/binder.fs">
       <Link>analyzer/binder.fs</Link>
     </Compile>
-    <Compile Include="../src/analyzer/interpreter.fs">
-      <Link>analyzer/interpreter.fs</Link>
+    <Compile Include="../src/langs.fs">
+      <Link>langs.fs</Link>
+    </Compile>
+    <Compile Include="../src/builtin/interpreter.fs">
+      <Link>builtin/interpreter.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/ast.fs">
+      <Link>gamma/ast.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/astops.fs">
+      <Link>gamma/astops.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/errors.fs">
+      <Link>gamma/errors.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/tokenizer.fs">
+      <Link>gamma/tokenizer.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/parser.fs">
+      <Link>gamma/parser.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/binder.fs">
+      <Link>gamma/binder.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/typechecker.fs">
+      <Link>gamma/typechecker.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/interpreter.fs">
+      <Link>gamma/interpreter.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/gamma.fs">
+      <Link>gamma/gamma.fs</Link>
     </Compile>
     <Compile Include="../src/main.fs">
       <Link>main.fs</Link>
