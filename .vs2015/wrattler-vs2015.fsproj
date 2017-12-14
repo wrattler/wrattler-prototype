@@ -77,14 +77,17 @@
     <Compile Include="../src/ast/astops.fs">
       <Link>ast/astops.fs</Link>
     </Compile>
-    <Compile Include="../src/analyzer/binder.fs">
-      <Link>analyzer/binder.fs</Link>
-    </Compile>
     <Compile Include="../src/langs.fs">
       <Link>langs.fs</Link>
     </Compile>
+    <Compile Include="../src/analyzer/binder.fs">
+      <Link>analyzer/binder.fs</Link>
+    </Compile>
     <Compile Include="../src/builtin/interpreter.fs">
       <Link>builtin/interpreter.fs</Link>
+    </Compile>
+    <Compile Include="../src/rendering.fs">
+      <Link>rendering.fs</Link>
     </Compile>
     <Compile Include="../src/gamma/ast.fs">
       <Link>gamma/ast.fs</Link>

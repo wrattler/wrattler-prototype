@@ -65,8 +65,34 @@ Institute website](http://turing.ac.uk), which you'll, no doubt, find very inter
 """
 
 // ------------------------------------------------------------------------------------------------
+
 open Wrattler.Languages
 open Wrattler.Ast.AstOps
+
+let bindBuiltinCodeBlock ctx (cb:CodeBlock) = async {
+  let vars = Map.toList ctx.Frames |> List.map snd
+  let codeEnt = bindEntity ctx cb.Language (Code(cb.Language, cb.Code, vars))
+
+  Log.trace("binder", " -> Known variables: %s", String.concat "," (Seq.map fst (Map.toSeq ctx.Frames)))
+  let frames = ResizeArray<_>()
+  for v, f in Map.toSeq ctx.Frames do
+    do! ctx.Evaluate f
+    match f.Value with 
+    | Some(Frame data) -> frames.Add(v, data)
+    | _ -> ()
+  let! vars = async {
+    try
+      let! vars = getExports (codeEnt.Symbol.ToString()) frames codeEnt // TODO: This should not call R repeatedly
+      Log.trace("binder", " -> Exporting variables: %s", String.concat "," vars)
+      return vars
+    with e -> 
+      Log.error("binder", "Getting R exports failed: %s", e)
+      return [] }
+
+  let vars = vars |> List.map (fun v -> v, bindEntity ctx cb.Language (DataFrame(v, codeEnt)))
+  //let frames = vars |> List.fold (fun frames (v, ent) -> Map.add v ent frames) ctx.Frames
+  let blockEnt = bindEntity ctx cb.Language (EntityKind.CodeBlock(cb.Language, codeEnt, List.map snd vars)) 
+  return blockEnt, vars }
 
 let recursiveAnalyzer result = 
   { new Analyzer<_, _, _> with 
@@ -84,36 +110,88 @@ let builtinInterprter evalf =
       member x.CreateContext(_) = null
       member x.Analyze(ent, ctx) = evalf ctx ent }
 
+type SimpleCodeBlock(lang, code) = 
+  interface BlockKind with
+    member x.Language = lang
+  interface CodeBlock with
+    member x.Code = code
+    member x.WithCode(newCode) = SimpleCodeBlock(lang, newCode) :> _
+
 let rlang = 
-  { new LanguagePlugin<obj, obj> with
-      member x.Bind(_, _) = failwith "R binder"
+  { new LanguagePlugin<obj, obj, _, _> with
+      member x.Bind(ctx, nd) = bindBuiltinCodeBlock ctx (nd :?> CodeBlock)
+      member x.Editor = Some(Rendering.createStandardEditor ())
       member x.TypeChecker = None
       member x.Interpreter = Some(builtinInterprter Interpreter.evalR)
-      member x.Parse(code) = 
-        CodeBlock("r", code), [] }
+      member x.Parse(code) = SimpleCodeBlock("r", code) :> _, [] }
 
 let jslang = 
-  { new LanguagePlugin<obj, obj> with
-      member x.Bind(_, _) = failwith "JS binder"
+  { new LanguagePlugin<obj, obj, _, _> with
+      member x.Bind(ctx, nd) = bindBuiltinCodeBlock ctx (nd :?> CodeBlock)
+      member x.Editor = Some(Rendering.createStandardEditor ())
       member x.Interpreter = Some(builtinInterprter Interpreter.evalJs)
       member x.TypeChecker = None
-      member x.Parse(code) = 
-        CodeBlock("javascript", code), [] }
+      member x.Parse(code) = SimpleCodeBlock("javascript", code) :> _, [] }
 
-let syslang = 
-  { new LanguagePlugin<obj, obj> with
-      member x.Bind(_, _) = failwith "sys binder"
+(*
+
+      | { Symbol = sym; BlockKind = MarkdownBlock objs } ->
+          yield sym, h?div ["class" => "block-markdown"] [
+            yield h?div ["class" => "tools"] [
+                h?a ["href" => "javascript:;"] [ h?i ["class" => "fa fa-code"] []; text "edit source" ] 
+              ]
+            let tree = Markdown.markdown.toHTMLTree(Array.ofList(box "markdown"::objs)) |> unbox<obj[]>
+            for i in 1 .. tree.Length-1 do yield Rendering.renderHtmlTree tree.[i] ] ]
+
+*)
+
+open Wrattler.Html
+
+let mdlang = 
+  { new LanguagePlugin<obj, obj, _, _> with
+      member x.Bind(ctx, _) = 
+        let ck = 
+          { new CustomEntityKind with 
+              member x.Language = "gamma"
+              member x.FormatEntity() = "markdown"
+              member x.GetCodeAndAntecedents() = [], "<markdown code='??' />" } // TODO
+        let ent = bindEntity ctx "markdown" (EntityKind.CustomEntity(ck))
+        async.Return(ent, [])
+
+      member x.Editor = 
+        { new Editor<_, _> with
+            member x.Initialize(nd) = nd 
+            member x.Render(ctx, nd) = 
+              match nd.Node.BlockKind with 
+              | :? MarkdownBlock as mb ->
+                  [ h?div ["class" => "block-markdown"] [
+                      yield h?div ["class" => "tools"] [
+                        h?a ["href" => "javascript:;"] [ h?i ["class" => "fa fa-code"] []; text "edit source" ] 
+                      ]
+                      let tree = Markdown.markdown.toHTMLTree(Array.ofList(box "markdown"::mb.Parsed)) |> unbox<obj[]>
+                      for i in 1 .. tree.Length-1 do yield Rendering.renderHtmlTree tree.[i] ] ]
+              | _ -> failwith "mdlang: Unexpected node"
+            member x.Update(state, evt) = state } |> Some
       member x.TypeChecker = None
       member x.Interpreter = None
       member x.Parse(code) = failwith "sys parser" }
 
-let languages : Map<string, LanguagePlugin<obj, obj>> = 
+let syslang = 
+  { new LanguagePlugin<obj, obj, _, _> with
+      member x.Bind(_, _) = failwith "sys binder"
+      member x.Editor = None
+      member x.TypeChecker = None
+      member x.Interpreter = None
+      member x.Parse(code) = failwith "sys parser" }
+
+let languages : Map<string, LanguagePlugin<obj, obj, obj, obj>> = 
   [ "system", syslang
-    "r", rlang
-    "javascript", jslang
+    "markdown", unbox mdlang
+    "r", unbox rlang
+    "javascript", unbox jslang
     "gamma", unbox Gamma.Plugin.language ] |> Map.ofSeq
  
-let rec createAnalyzerContext kind checker (getAnalyzer:_ -> Analyzer<_, _, _>) setResult input (gctx:Lazy<_>) langName (lang:LanguagePlugin<obj, obj>) = 
+let rec createAnalyzerContext kind checker (getAnalyzer:_ -> Analyzer<_, _, _>) setResult input (gctx:Lazy<_>) langName (lang:LanguagePlugin<obj, obj, _, _>) = 
   { new AnalyzerContext<obj> with
         member x.GlobalContext = gctx.Value
         member x.Context = getAnalyzer(lang).CreateContext(input)
@@ -168,7 +246,7 @@ let parseMarkdown tree =
     match pars with 
     | MarkdownNode "para" [MarkdownNode "inlinecode" [body]]::rest ->
         if not (List.isEmpty acc) then
-          yield { Node = { Symbol = blockId(); BlockKind = MarkdownBlock(List.rev acc); Errors = [] }; Entity = None; Range = { Start = 0; End = 0; } }
+          yield { Node = { ID = blockId(); BlockKind = { MarkdownBlock.Parsed = List.rev acc }; Errors = [] }; Entity = None; Range = { Start = 0; End = 0; } }
 
         let body = unbox<string> body
         let start = body.IndexOfAny [| '\r'; '\n' |]
@@ -176,7 +254,7 @@ let parseMarkdown tree =
         match languages.TryFind(lang) with
         | Some lang ->
             let block, errors = lang.Parse(body)
-            yield { Node = { Symbol = blockId(); BlockKind = block; Errors = errors }; Entity = None; Range = { Start = 0; End = body.Length } } 
+            yield { Node = { ID = blockId(); BlockKind = block; Errors = errors }; Entity = None; Range = { Start = 0; End = body.Length } } 
         | _ ->
             failwithf "Unsupported language '%s'" lang
 
@@ -185,7 +263,7 @@ let parseMarkdown tree =
         yield! loop (node::acc) rest
     | [] ->
         if not (List.isEmpty acc) then
-          yield { Node = { Symbol = blockId(); BlockKind = MarkdownBlock(List.rev acc); Errors = [] }; Entity = None; Range = { Start = 0; End = 0 } } }
+          yield { Node = { ID = blockId(); BlockKind = { MarkdownBlock.Parsed = List.rev acc }; Errors = [] }; Entity = None; Range = { Start = 0; End = 0 } } }
 
   match tree with 
   | MarkdownNode "markdown" body -> List.ofSeq (loop [] body)
@@ -198,195 +276,76 @@ open Wrattler.Html
 
 type State = 
   { BindingContext : BindingContext
-    Nodes : Node<Block> list
-    SelectedVariables : Map<string, string> }
+    Nodes : Node<Block> list 
+    States : obj list }
 
 type Event = 
   | Refresh
-  | UpdateCode of int * string
+  | StartEvaluation
+  | BlockEvent of id:string * obj
   | UpdateNodes of Node<Block> list
-  | DisplayVariable of string * string
-
+  
 let state =
-  let binders = languages |> Map.map (fun _ v a b -> v.Bind(a, b))
-  { BindingContext = Binder.createContext binders (startAnalyzer (createInterpreterContext ()))
-    SelectedVariables = Map.empty
-    Nodes = parseMarkdown (Markdown.markdown.parse(demo)) }
+  let nodes = parseMarkdown (Markdown.markdown.parse(demo))
+  { BindingContext = Binder.createContext languages (startAnalyzer (createInterpreterContext ()))
+    Nodes = nodes
+    States = 
+      [ for nd in nodes ->
+          match languages.[nd.Node.BlockKind.Language].Editor with
+          | None -> null
+          | Some ed -> ed.Initialize nd ] }
 
 let startEvaluation trigger state = Async.StartImmediate <| async { 
   try
     let! bound, bindingResult = Binder.bind state.BindingContext state.Nodes
     trigger (UpdateNodes state.Nodes)
     do! startAnalyzer (createCheckingContext bindingResult) bound
-    //let evals = languages |> Map.map (fun _ l -> l.Evaluate)
-    //do! Interpreter.evaluate evals bound
+    trigger Refresh
     do! startAnalyzer (createInterpreterContext ()) bound    
     trigger Refresh
   with e ->
     Log.exn("main", "Failed: %O", e) }
 
-let rec renderHtmlTree tree =
-  if isString tree then text(unbox tree)
-  elif isArray tree then
-    let arr = unbox<obj[]> tree
-    let contentIdx, props = 
-      if isObject arr.[1] then 
-        let props = JsHelpers.properties(arr.[1])
-        2, [for p in props -> p.key => unbox p.value ]
-      else 1, []
-    h.el(unbox arr.[0]) props [ for i in contentIdx .. arr.Length-1 -> renderHtmlTree arr.[i] ]
-  else failwithf "Unexpected node: %A" tree
-
-let renderTable url trigger = 
-  match Datastore.tryFetchPreview url trigger with 
-  | None ->
-      h?div ["class" => "preview"] [ h?p [] [text "Loading..."] ]
-  | Some objs ->
-      let first = Array.head objs
-      let props = JsHelpers.properties(first)
-      h?div ["class" => "preview"] [
-        h?table ["class" => "table"] [
-          h?thead [] [ 
-            h?tr [] [
-              for prop in props -> h?th [] [text prop.key]
-            ]
-          ]
-          h?tbody [] [
-            for obj in objs -> 
-              h?tr [] [
-                for prop in props -> h?td [] [ text(string (getProperty obj prop.key))  ]
-              ]
-          ]
-        ]
-      ]
-
-open Fable.Import.Monaco
-
-let createMonacoEditor id lang code = 
-  let services = JsInterop.createEmpty<editor.IEditorOverrideServices>
-  let options = JsInterop.createEmpty<editor.IEditorConstructionOptions>
-  let scroll = JsInterop.createEmpty<editor.IEditorScrollbarOptions>
-  let noMini = JsInterop.createEmpty<editor.IEditorMinimapOptions>
-  noMini.enabled <- Some false
-  scroll.vertical <- Some "none"
-  scroll.horizontal <- Some "auto"
-  options.scrollbar <- Some scroll
-  options.value <- Some code
-  options.language <- Some lang
-  options.lineNumbersMinChars <- Some 3.0
-  options.contextmenu <- Some false
-  options.scrollBeyondLastLine <- Some false
-  options.overviewRulerLanes <- Some 0.0
-  options.fontSize <- Some 14.0
-  options.minimap <- Some noMini
-  options.lineHeight <- Some 20.0
-  options.fontFamily <- Some "Monaco"
-  options.lineNumbers <- Some (box false)
-  let el = Browser.document.getElementById(id)
-  let ed = editor.Globals.create(el, options, services)
-
-  let mutable lastHeight = -1.0
-  let maxHeight = 500.0
-  let autosizeEditor () =
-    let text = ed.getModel().getValue(editor.EndOfLinePreference.LF, false)
-    let lines = 1.0 + float (text.Split('\n').Length)
-    let zoneHeight = 0.0 //match previewService with Some ps -> ps.ZoneHeight | _ -> 0.0
-    let height = min maxHeight (max 20.0 (lines * 20.0 + zoneHeight))
-    if height <> lastHeight then
-      lastHeight <- height
-      let dim = JsInterop.createEmpty<editor.IDimension>
-      dim.width <- el.clientWidth
-      dim.height <- height
-      ed.layout(dim)
-      el.style.height <- string dim.height + "px" 
-      el.style.width <- string dim.width + "px" 
-
-  ed.getModel().onDidChangeContent(fun _ -> autosizeEditor ()) |> ignore     
-  autosizeEditor ()
-  ed
-
 let render trigger state = 
   h.stable [
-    for index, nd in Seq.zip [0 .. state.Nodes.Length-1] state.Nodes do
-      match nd.Node with
-      | { Symbol = sym; BlockKind = CustomBlock(block) } ->
-          yield sym, h?div [] [ 
-            match nd.Entity with 
-            | Some ent -> yield h?p [] [ text (sprintf "Custom: Type: %A, Errors: %A" ent.Type ent.Errors) ]
-            | None -> yield h?p [] [ text ("Custom: No entity") ]
-          ]
+    for nd, state in Seq.zip state.Nodes state.States do
+      match languages.[nd.Node.BlockKind.Language].Editor with
+      | None -> ()
+      | Some ed ->          
+          let ctx = 
+            { new EditorContext<_> with
+                member x.Trigger(evt) = trigger(BlockEvent(nd.Node.ID, evt))
+                member x.Refresh() = trigger Refresh }
+          for idx, node in List.indexed (ed.Render(ctx, state)) do
+            yield sprintf "%s-%d" nd.Node.ID idx, node ]
 
-      | { Symbol = sym; BlockKind = CodeBlock(lang, src) } ->
-          yield sym, h.custom 
-            (fun elid ->
-              h?div ["class" => "block-input"] [
-                h?div ["class" => "tools"] [
-                  h?a ["href" => "javascript:;"] [ h?i ["class" => "fa fa-code"] []; text "hide source" ] 
-                ]
-                h?div ["id" => elid + "_editor" ] []
-              ] |> renderTo (Browser.document.getElementById(elid))
-
-              let ed = createMonacoEditor (elid + "_editor") lang src 
-              ed.onKeyDown(fun ke -> 
-                if ke.altKey && ke.keyCode = KeyCode.Enter then 
-                  trigger(UpdateCode(index, ed.getModel().getValue())) ) |> ignore
-              ed )
-            (fun ed -> () )
-
-          yield sym + "-output", h?div ["class" => "block-output"] [
-            match nd.Entity with
-            | Some { Kind = EntityKind.CodeBlock("javascript", { Kind = EntityKind.Code(_, code, _); Value = Some(Outputs outs) }, _) } ->
-                // TODO: Use entity symbol for h.delayed
-                for out, i in Seq.zip outs [0 .. outs.Length-1] do
-                  let id = sprintf "output_%d_%d" i (hash code)
-                  yield h.delayed id (text "") (fun id -> out id)
-
-            | Some { Kind = EntityKind.CodeBlock(_, _, vars) } ->
-                let vars = vars |> List.choose (function { Kind = DataFrame(var, _); Value = Some(Frame value) } -> Some(var, value) | _ -> None)
-                if not (List.isEmpty vars) then
-                  let selected = defaultArg (state.SelectedVariables.TryFind(src)) (fst(List.head vars))
-                  yield h?ul ["class" => "nav nav-pills"] [
-                    for v, data in vars do 
-                    yield h?li ["class" => "nav-item"] [
-                      h?a [
-                        "class" => (if v = selected then "nav-link active" else "nav-link")
-                        "click" =!> fun _ _ -> trigger (DisplayVariable(src, v))
-                        "href" => "#" ] [text v]
-                    ]
-                  ]
-                  for v, data in vars do
-                    if v = selected then 
-                      yield renderTable data (fun _ -> trigger Refresh)
-            | _ ->
-                yield h?p [] [ text ("loading...") ]
-          ]
-
-      | { Symbol = sym; BlockKind = MarkdownBlock objs } ->
-          yield sym, h?div ["class" => "block-markdown"] [
-            yield h?div ["class" => "tools"] [
-                h?a ["href" => "javascript:;"] [ h?i ["class" => "fa fa-code"] []; text "edit source" ] 
-              ]
-            let tree = Markdown.markdown.toHTMLTree(Array.ofList(box "markdown"::objs)) |> unbox<obj[]>
-            for i in 1 .. tree.Length-1 do yield renderHtmlTree tree.[i] ] ]
-
-let update trigger state evt =
+let update trigger globalState evt =
   match evt with
-  | Refresh -> state
-  | UpdateNodes newNodes -> { state with Nodes = newNodes }
-  | UpdateCode(i, newCode) -> 
-      let nodes = 
-        state.Nodes 
-        |> List.mapi (fun j node ->
-          match node.Node.BlockKind with 
-          | CodeBlock(lang, _) when i = j -> node.Range, { node.Node with BlockKind = CodeBlock(lang, newCode) }
-          | _ -> node.Range, node.Node)
-        |> List.map (fun (rng, node) -> { Node = node; Range = rng; Entity = None })
-      startEvaluation trigger { state with Nodes = nodes }
+  | Refresh -> 
+      globalState
+
+  | StartEvaluation ->
+      startEvaluation trigger globalState
       state
 
-  | DisplayVariable(k, v) -> 
-      { state with SelectedVariables = Map.add k v state.SelectedVariables }
+  | BlockEvent(id, evt) ->
+      let node, state = Seq.zip globalState.Nodes globalState.States |> Seq.find (fun (nd, _) -> nd.Node.ID = id)
+      let nstate = 
+        match languages.[node.Node.BlockKind.Language].Editor with
+        | Some ed -> ed.Update(evt, state)
+        | None -> { CodeChanged = false; Node = node; State = state }
+      let newNodes, newStates = 
+        List.zip globalState.Nodes globalState.States 
+        |> List.map (fun (nd, st) -> 
+          if nd.Node.ID = id then nstate.Node, nstate.State else nd, st)
+        |> List.unzip
+      let state = { globalState with Nodes = newNodes; States = newStates }
+      if nstate.CodeChanged then startEvaluation trigger state
+      state
+
+  | UpdateNodes newNodes -> 
+      { state with Nodes = newNodes }
 
 let app = createVirtualDomApp "demo" state render update
-app.Trigger(UpdateCode(-1, ""))
+app.Trigger(StartEvaluation)
 

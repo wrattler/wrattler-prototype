@@ -12,9 +12,10 @@
     <Compile Include="common/datastore.fs" />
     <Compile Include="ast/ast.fs" />
     <Compile Include="ast/astops.fs" />
-    <Compile Include="analyzer/binder.fs" />
     <Compile Include="langs.fs" />
+    <Compile Include="analyzer/binder.fs" />
     <Compile Include="builtin/interpreter.fs" />
+    <Compile Include="rendering.fs" />
     <Compile Include="gamma/ast.fs" />
     <Compile Include="gamma/astops.fs" />
     <Compile Include="gamma/errors.fs" />

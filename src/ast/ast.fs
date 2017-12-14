@@ -51,16 +51,11 @@ and Entity =
     mutable Errors : Error list
     mutable Value : Value option }
 
-type CustomBlockKind = 
+type BlockKind = 
   abstract Language : string
 
-type BlockKind = 
-  | MarkdownBlock of obj list
-  | CodeBlock of lang:string * source:string
-  | CustomBlock of CustomBlockKind
-
 type Block = 
-  { Symbol : string 
+  { ID : string 
     Errors : Error list
     BlockKind : BlockKind }
 

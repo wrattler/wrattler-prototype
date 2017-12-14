@@ -11,6 +11,7 @@ open Wrattler.Binder
 open Wrattler.Common
 open Wrattler.Gamma.Ast
 open Wrattler.Gamma.AstOps
+open Wrattler.Languages
 
 /// As we bind, we keep root entity, current scope & variables in scope
 type GammaBindingContext = 
@@ -75,7 +76,7 @@ let setEntity ctx node ent =
 
 /// Bind entities to expressions in the parse tree
 /// (See `GammaEntityKind` for explanation of how the entity tree looks like)
-let rec bindExpression ctx node = 
+let rec bindExpression ctx (node:Node<_>) = 
   let bindCallArgExpression site ctx = bindExpression { ctx with CallSite = Some site; Chain = None }
   let bindMemberExpression chain ctx = bindExpression { ctx with CallSite = None; Chain = Some chain }
   let bindPlaceExpression ctx = bindExpression { ctx with CallSite = None }
@@ -146,7 +147,7 @@ let rec bindExpression ctx node =
 /// Bind entities to a command in a parse tree. The handling of `let` is similar
 /// to the handling of lambda abstraction. This adds variables to context - we ignore
 /// bound entities, because nothing depends on it (except via variables)
-let bindCommand ctx node =
+let bindCommand ctx (node:Node<_>) =
   match node.Node with
   | Command.Let(v, e) ->
       let body = bindExpression ctx e 

@@ -10,10 +10,13 @@ open Wrattler.Gamma.Ast
 open Wrattler.Gamma.AstOps
 open Wrattler.Gamma.TypeChecker
 
-type GammaBlockKind(program:Program) = 
+type GammaBlockKind(code, program:Program) = 
   member x.Program = program
-  interface CustomBlockKind with 
+  interface BlockKind with 
     member x.Language = "gamma"
+  interface CodeBlock with
+    member x.Code = code
+    member x.WithCode(newCode) = GammaBlockKind(newCode, program) :> _
 
 let gammaChecker = 
   { new Analyzer<BindingResult, Wrattler.Ast.Type, _> with
@@ -46,17 +49,17 @@ let gammaInterpreter =
 
    
 let language = 
-  { new LanguagePlugin<_, _> with 
+  { new LanguagePlugin<_, _, _, _> with 
       member x.Interpreter = Some gammaInterpreter      
       member x.TypeChecker = Some gammaChecker
+      member x.Editor = Some(Wrattler.Rendering.createStandardEditor ())
 
       member x.Bind(ctx, block) =
         match block with 
         | :? GammaBlockKind as block ->
             let prog = Binder.bindProgram (Binder.createContext ctx []) block.Program
-            prog, []
+            async.Return(prog, [])
         | _ -> failwith "Gamma.LanguagePlugin.Bind: Expected GammaBlockKind" 
-
       member x.Parse(code:string) = 
         let program, errors = Parser.parseProgram code
-        CustomBlock(GammaBlockKind(program)), List.ofArray errors }
+        GammaBlockKind(code, program) :> _, List.ofArray errors }
