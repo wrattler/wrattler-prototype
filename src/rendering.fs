@@ -96,7 +96,7 @@ type CodeEditorState =
 
 type CodeEditorEvent = 
   | DisplayVariable of string
-  | UpdateCode of string
+  | UpdateCode of bool * string
 
 let renderEditor (ctx:EditorContext<_>) state lang src =
   [ h.custom 
@@ -109,11 +109,20 @@ let renderEditor (ctx:EditorContext<_>) state lang src =
         ] |> renderTo (Browser.document.getElementById(elid))
 
         let ed = createMonacoEditor (elid + "_editor") lang src 
+        ed.onDidChangeModelContent(fun me ->
+          ctx.Trigger(UpdateCode(false, ed.getModel().getValue()))  ) |> ignore
         ed.onKeyDown(fun ke -> 
-          if ke.altKey && ke.keyCode = KeyCode.Enter then 
-            ctx.Trigger(UpdateCode(ed.getModel().getValue())) ) |> ignore
+          if ke.altKey && ke.keyCode = KeyCode.Enter then
+            ctx.Trigger(UpdateCode(true, ed.getModel().getValue()))  ) |> ignore
         ed )
       (fun ed -> () )
+
+    h?div [] [
+      match state.Node.Entity with
+      | Some ent ->
+          yield h?ul[] [ for e in ent.Errors -> h?li [] [ text e.Message ] ]
+      | _ -> () 
+    ]
 
     h?div ["class" => "block-output"] [
       match state.Node.Entity with
@@ -139,8 +148,8 @@ let renderEditor (ctx:EditorContext<_>) state lang src =
             for v, data in vars do
               if v = selected then 
                 yield renderTable data ctx.Refresh
-      | _ ->
-          yield h?p [] [ text ("loading...") ]
+      | ent ->
+          yield h?p [] [ text (sprintf "Entity: %A" ent) ]
     ]
   ]
 
@@ -154,14 +163,14 @@ let createStandardEditor () =
       member x.Update(evt, state) = 
         match evt with 
         | DisplayVariable n -> 
-            { CodeChanged = false; Node = state.Node; State = { state with SelectedVariable = Some n } }
-        | UpdateCode src -> 
-            let cb = 
+            { StartEvaluation = None; Node = state.Node; State = { state with SelectedVariable = Some n } }
+        | UpdateCode(run, src) -> 
+            let cb, errs = 
               match state.Node.Node.BlockKind with
               | :? CodeBlock as cb -> cb.WithCode(src)
               | _ -> failwith "createStandardEditor: Wrong block kind"
-            let nd = { state.Node.Node with BlockKind = cb }
+            let nd = { state.Node.Node with BlockKind = cb; Errors = errs }
             let st = { state with Node = { Range = state.Node.Range; Node = nd; Entity = None } } 
-            { CodeChanged = true; Node = st.Node; State = st } }
+            { StartEvaluation = Some run; Node = st.Node; State = st } }
 
 

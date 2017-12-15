@@ -78,7 +78,7 @@ let bindNode ctx (node:Node<_>) = async {
   let! blockEnt, vars = ctx.Languages.[block.Language].Bind(ctx, block)
   let blockEnt = blockEnt |> setEntity ctx node
   let frames = vars |> List.fold (fun frames (v, ent) -> Map.add v ent frames) ctx.Frames
-  return { ctx with Frames = frames }, [blockEnt] }
+  return { ctx with Frames = frames }, blockEnt }
 
 // ------------------------------------------------------------------------------------------------
 
@@ -99,7 +99,8 @@ let bind ctx nodes =
     | [] -> return List.rev acc
     | node::nodes ->
         let! ctx, bound = bindNode ctx node
-        return! loop ctx (bound @ acc) nodes }
+        bound.Errors <- node.Node.Errors @ bound.Errors
+        return! loop ctx (bound :: acc) nodes }
   
   async { 
     let! bound = loop ctx [] nodes

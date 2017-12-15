@@ -16,7 +16,9 @@ type GammaBlockKind(code, program:Program) =
     member x.Language = "gamma"
   interface CodeBlock with
     member x.Code = code
-    member x.WithCode(newCode) = GammaBlockKind(newCode, program) :> _
+    member x.WithCode(newCode) = 
+      let newProgram, errors = Parser.parseProgram newCode
+      GammaBlockKind(newCode, newProgram) :> _, List.ofArray errors
 
 let gammaChecker = 
   { new Analyzer<BindingResult, Wrattler.Ast.Type, _> with
@@ -26,14 +28,19 @@ let gammaChecker =
 
       member x.Analyze(ent, ctx) = async {
         match ent with 
-        | { Kind = GammaEntity(ge) } -> 
+        | { Kind = GammaEntity(ge) } ->
             Log.trace("typechecker", "Checking entity '%s'", Wrattler.Ast.AstOps.formatEntityKind ent.Kind)
             let! typ = TypeChecker.typeCheckEntityAsync ctx ent 
             let! typ = TypeChecker.evaluateDelayedType (typ :?> Type)
             Log.trace("typechecker", "Type of entity '%s' is: %s", Wrattler.Ast.AstOps.formatEntityKind ent.Kind, formatType typ)
             return typ :> _
-        | _ -> 
-            return failwith "GammaLanguage: Wrong entity" } }
+
+        | { Kind = CodeBlock("gamma", body, _) } ->
+            do! ctx.Analyze(body, ctx.Context)
+            return Type.Any :> _
+
+        | ent -> 
+            return failwithf "GammaLanguage: Wrong entity (tc): %A" ent } }
 
 let gammaInterpreter = 
   { new Analyzer<unit, Wrattler.Ast.Value, _> with
@@ -43,8 +50,11 @@ let gammaInterpreter =
         match ent with 
         | { Kind = GammaEntity(ge) } ->
             return! Interpreter.evaluate ctx ent
+        | { Kind = CodeBlock("gamma", body, _) } ->
+            do! ctx.Analyze(body, ctx.Context)
+            return body.Value.Value
         | _ -> 
-            return failwith "GammaLanguage: Wrong entity" } }
+            return failwith "GammaLanguage: Wrong entity (eval)" } }
 
 
    
@@ -58,8 +68,10 @@ let language =
         match block with 
         | :? GammaBlockKind as block ->
             let prog = Binder.bindProgram (Binder.createContext ctx []) block.Program
-            async.Return(prog, [])
+            let block = CodeBlock("gamma", prog, []) |> bindEntity ctx "gamma"
+            async.Return(block, [])
         | _ -> failwith "Gamma.LanguagePlugin.Bind: Expected GammaBlockKind" 
+
       member x.Parse(code:string) = 
         let program, errors = Parser.parseProgram code
         GammaBlockKind(code, program) :> _, List.ofArray errors }

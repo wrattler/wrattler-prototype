@@ -12,7 +12,7 @@ type EditorContext<'TEvent> =
   abstract Trigger : 'TEvent -> unit
 
 type EditorState<'TState> = 
-  { CodeChanged : bool 
+  { StartEvaluation : bool option
     Node : Node<Block>
     State : 'TState }
 
@@ -78,7 +78,7 @@ and BindingResult(ents:(Range * Entity)[]) =
 type CodeBlock = 
   inherit BlockKind
   abstract Code : string
-  abstract WithCode : string -> CodeBlock
+  abstract WithCode : string -> CodeBlock * Error list
 
 type MarkdownBlock = 
   { Parsed : obj list }

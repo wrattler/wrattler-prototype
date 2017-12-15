@@ -23,6 +23,12 @@ let test = 40 + "hello"
 
 ### Analysing data using R
 
+Nothing:
+
+```r
+1+1
+```
+
 First we get and clean some data. This is trivial for now, but the important point is that
 we define a frame `data` that we will access later.
 
@@ -115,7 +121,7 @@ type SimpleCodeBlock(lang, code) =
     member x.Language = lang
   interface CodeBlock with
     member x.Code = code
-    member x.WithCode(newCode) = SimpleCodeBlock(lang, newCode) :> _
+    member x.WithCode(newCode) = SimpleCodeBlock(lang, newCode) :> _, []
 
 let rlang = 
   { new LanguagePlugin<obj, obj, _, _> with
@@ -197,7 +203,7 @@ let rec createAnalyzerContext kind checker (getAnalyzer:_ -> Analyzer<_, _, _>) 
         member x.Context = getAnalyzer(lang).CreateContext(input)
         member x.Analyze(ent, ctx) = async {
           if not (checker ent) then 
-            Log.trace(kind, "Entity: %s", AstOps.formatEntityKind ent.Kind)
+            Log.trace(kind, "Entity [%s]: %s", ent.Language, AstOps.formatEntityKind ent.Kind)
             // TODO: DO not create new contexts if it has not changed
             let rec ntctx = createAnalyzerContext kind checker getAnalyzer setResult input (lazy ngctx) langName lang
             and ngctx = { gctx.Value with Contexts = gctx.Value.Contexts.Add(langName, ntctx) }
@@ -205,7 +211,7 @@ let rec createAnalyzerContext kind checker (getAnalyzer:_ -> Analyzer<_, _, _>) 
             let errorCount = ctx.GlobalContext.Errors.Count
             let! res = getAnalyzer(languages.[ent.Language]).Analyze(ent, ctx) 
             ent.Errors <- ent.Errors @ [ for i in errorCount .. ctx.GlobalContext.Errors.Count - 1 -> ctx.GlobalContext.Errors.[i] ]
-            Log.trace(kind, "Entity %s, result:  %O", AstOps.formatEntityKind ent.Kind, res)
+            Log.trace(kind, "Entity [%s] %s DONE errors: %s, result: %O", ent.Language, AstOps.formatEntityKind ent.Kind, ent.Errors.Length, res)
             setResult ent res } }
 
 let createCheckingContext = 
@@ -281,28 +287,20 @@ type State =
 
 type Event = 
   | Refresh
-  | StartEvaluation
+  | StartEvaluation of bool
   | BlockEvent of id:string * obj
-  | UpdateNodes of Node<Block> list
+  | UpdateNodes of Node<Block> list * obj list
   
-let state =
-  let nodes = parseMarkdown (Markdown.markdown.parse(demo))
-  { BindingContext = Binder.createContext languages (startAnalyzer (createInterpreterContext ()))
-    Nodes = nodes
-    States = 
-      [ for nd in nodes ->
-          match languages.[nd.Node.BlockKind.Language].Editor with
-          | None -> null
-          | Some ed -> ed.Initialize nd ] }
-
-let startEvaluation trigger state = Async.StartImmediate <| async { 
+let startEvaluation trigger state updateAsap evaluate = Async.StartImmediate <| async { 
   try
     let! bound, bindingResult = Binder.bind state.BindingContext state.Nodes
-    trigger (UpdateNodes state.Nodes)
+    if updateAsap then trigger (UpdateNodes(state.Nodes, state.States))
     do! startAnalyzer (createCheckingContext bindingResult) bound
-    trigger Refresh
-    do! startAnalyzer (createInterpreterContext ()) bound    
-    trigger Refresh
+    if updateAsap then trigger Refresh
+    else trigger (UpdateNodes(state.Nodes, state.States))
+    if evaluate then
+      do! startAnalyzer (createInterpreterContext ()) bound    
+      trigger Refresh
   with e ->
     Log.exn("main", "Failed: %O", e) }
 
@@ -322,30 +320,49 @@ let render trigger state =
 let update trigger globalState evt =
   match evt with
   | Refresh -> 
+      Log.trace("gui", "Refresh")
       globalState
 
-  | StartEvaluation ->
-      startEvaluation trigger globalState
-      state
+  | StartEvaluation run ->
+      Log.trace("gui", "Start evaluation")
+      startEvaluation trigger globalState true run
+      globalState
 
   | BlockEvent(id, evt) ->
+      Log.trace("gui", "Event in block %s", id)
       let node, state = Seq.zip globalState.Nodes globalState.States |> Seq.find (fun (nd, _) -> nd.Node.ID = id)
       let nstate = 
         match languages.[node.Node.BlockKind.Language].Editor with
         | Some ed -> ed.Update(evt, state)
-        | None -> { CodeChanged = false; Node = node; State = state }
+        | None -> { StartEvaluation = None; Node = node; State = state }
       let newNodes, newStates = 
         List.zip globalState.Nodes globalState.States 
         |> List.map (fun (nd, st) -> 
           if nd.Node.ID = id then nstate.Node, nstate.State else nd, st)
         |> List.unzip
-      let state = { globalState with Nodes = newNodes; States = newStates }
-      if nstate.CodeChanged then startEvaluation trigger state
-      state
-
-  | UpdateNodes newNodes -> 
-      { state with Nodes = newNodes }
+      match nstate.StartEvaluation with
+      | Some run -> 
+          let newState = { globalState with Nodes = newNodes; States = newStates }          
+          startEvaluation trigger newState false run
+          // Return old nodes - evaluation will trigger update when needed
+          globalState
+      | _ -> 
+          { globalState with Nodes = newNodes; States = newStates }
+          
+  | UpdateNodes(newNodes, newStates) -> 
+      Log.trace("gui", "Update nodes")
+      { globalState with Nodes = newNodes; States = newStates }
+      
+let state =
+  let nodes = parseMarkdown (Markdown.markdown.parse(demo))
+  { BindingContext = Binder.createContext languages (startAnalyzer (createInterpreterContext ()))
+    Nodes = nodes
+    States = 
+      [ for nd in nodes ->
+          match languages.[nd.Node.BlockKind.Language].Editor with
+          | None -> null
+          | Some ed -> ed.Initialize nd ] }
 
 let app = createVirtualDomApp "demo" state render update
-app.Trigger(StartEvaluation)
+app.Trigger(StartEvaluation true)
 
