@@ -10,6 +10,90 @@ open Wrattler.Gamma.Ast
 open Wrattler.Gamma.AstOps
 open Wrattler.Gamma.TypeChecker
 
+// ------------------------------------------------------------------------------------------------
+// Global provided types
+// ------------------------------------------------------------------------------------------------
+
+open Wrattler.Gamma.TypeProviders
+
+let globalEntity name meta typ expr = 
+  { Kind = EntityKind.CustomEntity(GammaEntityWrapper(GammaEntityKind.GlobalValue(name, expr)))
+    Symbol = createAutoSymbol()
+    Type = Some typ
+    Meta = meta
+    Value = None
+    Language = "gamma"
+    Errors = [] }
+
+let buildGlobalsTable provideTypes = Async.StartAsNamedFuture "buildGlobalsTable" <| async {
+  // We need to pass the lookup function to the code that provides types
+  // (because the providers may need to lookup named types), so we define
+  // the map as mutable and fill it later.
+  let mutable named = Map.empty
+  let lookupNamed n = 
+    match named.TryFind(n) with
+    | Some(r) -> r
+    | None -> 
+        Log.error("typechecker", "Could not find named type '%s'", n)
+        failwith (sprintf "Could not find named type '%s'" n)
+
+  let! provided = provideTypes lookupNamed
+  let allTypes = 
+    [ // Pretend we support these - the names appear in the F# provided types
+      // and if the functions are not actually used, providing Any type works 
+      yield TypeProviders.NamedType("value", Type.Any)
+      yield TypeProviders.NamedType("object", Type.Any)
+      yield TypeProviders.NamedType("seq", Type.Any) 
+      yield TypeProviders.NamedType("async", Type.Any) 
+      yield! provided ]
+
+  // Build lookup table from named types and
+  // list of global entities (provided global values)
+  named <- 
+    allTypes
+    |> Seq.choose (function TypeProviders.NamedType(s, t) -> Some(s, t) | _ -> None)
+    |> Map.ofSeq
+  let globalEntities = allTypes |> List.choose (function 
+    | TypeProviders.GlobalValue(n, m, e, t) -> 
+        Some(globalEntity n m t (Some e))
+    | _ -> None)
+    (*
+  let test = Interpreter.globalEntity "magic" [] (Type.Method(fun vs ->
+    { new ObjectType with
+        member x.Members = 
+          [| for i in 1 .. unbox (List.item 1 vs) -> 
+               { Name = unbox (List.head vs) + " " + string i; Type = Type.Primitive(PrimitiveType.String);
+                 Metadata = []; Emitter = { Emit = fun _ -> Babel.StringLiteral(unbox (List.head vs), None) } } |]
+        member x.TypeEquals _ = false } |> Type.Object |> Some )) (Some(Babel.StringLiteral("test", None)))
+        *)
+  return globalEntities } 
+
+let rec resolveProvider lookup ignoreFilter kind endpoint = 
+  match kind with
+  | "rest" ->
+      match TypeProviders.RestProvider.provideRestType lookup (resolveProvider lookup ignoreFilter) "anonymous" endpoint "" with
+      | ProvidedType.GlobalValue(_, _, e, t) -> t, { Emit = fun _ -> e }
+      | _ -> failwith "resolveProvider: Expected global value"
+  | "pivot" ->
+      let pivotType = async {
+        let! typ = TypeProviders.Pivot.providePivotType endpoint ignoreFilter "anonymous" lookup
+        match typ with 
+        | ProvidedType.GlobalValue(_, _, _, t) -> return t 
+        | _ -> return failwith "resolveProvider: Expected global value" }
+      Type.Delayed(Async.StartAsNamedFuture ("pivotType:" + endpoint) pivotType),
+      { Emit = fun _ -> TypeProviders.Pivot.makePivotExpression endpoint }
+  | _ ->
+    Log.error("providers", "Cannot resolve provider '%s' (%s)", kind, endpoint) 
+    failwith "resolveProvider: Cannot resolve type provider"
+
+let globals = buildGlobalsTable (fun lookup -> async {
+  let sample = 
+    TypeProviders.RestProvider.provideRestType 
+      lookup (resolveProvider lookup false) "worldbank" "https://thegamma-services.azurewebsites.net/worldbank" ""
+  return [sample] })
+
+// ------------------------------------------------------------------------------------------------
+
 type GammaBlockKind(code, program:Program) = 
   member x.Program = program
   interface BlockKind with 
@@ -22,9 +106,14 @@ type GammaBlockKind(code, program:Program) =
 
 let gammaChecker = 
   { new Analyzer<BindingResult, Wrattler.Ast.Type, _> with
-      member x.CreateContext(bound) = 
+      member x.CreateContext(bound) = async {
         let rangeLookup = dict [ for r, e in bound.Entities -> e.Symbol, r ]
-        { Globals = dict []; Ranges = rangeLookup; Evaluate = fun _ -> failwith "GammaEntity: evaluate" }
+        let getName = function 
+          | { Kind = GammaEntity(GammaEntityKind.GlobalValue(n, _)) } -> n
+          | _ -> failwith "getName: Not gamma entity"
+        let! globals = Async.AwaitFuture globals
+        let globals = Map.ofList [ for e in globals -> getName e, e ]
+        return { Globals = globals; Ranges = rangeLookup; Evaluate = fun _ -> failwith "GammaEntity: evaluate" }}
 
       member x.Analyze(ent, ctx) = async {
         match ent with 
@@ -45,7 +134,7 @@ let gammaChecker =
 let gammaInterpreter = 
   { new Analyzer<unit, Wrattler.Ast.Value, _> with
       member x.CreateContext(_) = 
-        { Interpreter.EvaluationContext.Results = ResizeArray<_>() }
+        async.Return { Interpreter.EvaluationContext.Results = ResizeArray<_>() }
       member x.Analyze(ent, ctx) = async {
         match ent with 
         | { Kind = GammaEntity(ge) } ->

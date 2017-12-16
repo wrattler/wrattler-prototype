@@ -113,6 +113,18 @@
     <Compile Include="../src/gamma/interpreter.fs">
       <Link>gamma/interpreter.fs</Link>
     </Compile>
+    <Compile Include="../src/gamma/providers/providers.fs">
+      <Link>gamma/providers/providers.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/providers/fsharp.fs">
+      <Link>gamma/providers/fsharp.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/providers/rest.fs">
+      <Link>gamma/providers/rest.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/providers/pivot.fs">
+      <Link>gamma/providers/pivot.fs</Link>
+    </Compile>
     <Compile Include="../src/gamma/gamma.fs">
       <Link>gamma/gamma.fs</Link>
     </Compile>

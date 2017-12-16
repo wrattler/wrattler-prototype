@@ -32,7 +32,7 @@ and AnalyzerContext<'TData> =
   abstract Analyze : Entity * 'TData -> Async<unit>
 
 type Analyzer<'TInput, 'TOutput, 'TContext> =
-  abstract CreateContext : 'TInput -> 'TContext
+  abstract CreateContext : 'TInput -> Async<'TContext>
   abstract Analyze : Entity * AnalyzerContext<'TContext> -> Async<'TOutput>
 
 and LanguagePlugin<'TCheckingContext, 'TInterpreterContext, 'TEditorEvent, 'TEditorState> = 

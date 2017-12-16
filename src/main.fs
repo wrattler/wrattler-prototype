@@ -102,7 +102,7 @@ let bindBuiltinCodeBlock ctx (cb:CodeBlock) = async {
 
 let recursiveAnalyzer result = 
   { new Analyzer<_, _, _> with 
-      member x.CreateContext(_) = null
+      member x.CreateContext(_) = async.Return null
       member x.Analyze(ent, ctx) = async { 
         for ant in ent.Antecedents do 
           do! ctx.Analyze(ant, ctx.Context) 
@@ -113,7 +113,7 @@ let defaultInterpreter = recursiveAnalyzer Value.Nothing
 
 let builtinInterprter evalf = 
   { new Analyzer<unit, Wrattler.Ast.Value, _> with
-      member x.CreateContext(_) = null
+      member x.CreateContext(_) = async.Return null
       member x.Analyze(ent, ctx) = evalf ctx ent }
 
 type SimpleCodeBlock(lang, code) = 
@@ -198,26 +198,28 @@ let languages : Map<string, LanguagePlugin<obj, obj, obj, obj>> =
     "gamma", unbox Gamma.Plugin.language ] |> Map.ofSeq
  
 let rec createAnalyzerContext kind checker (getAnalyzer:_ -> Analyzer<_, _, _>) setResult input (gctx:Lazy<_>) langName (lang:LanguagePlugin<obj, obj, _, _>) = 
+  async.Bind(getAnalyzer(lang).CreateContext(input), fun localCtx ->
   { new AnalyzerContext<obj> with
-        member x.GlobalContext = gctx.Value
-        member x.Context = getAnalyzer(lang).CreateContext(input)
-        member x.Analyze(ent, ctx) = async {
-          if not (checker ent) then 
-            Log.trace(kind, "Entity [%s]: %s", ent.Language, AstOps.formatEntityKind ent.Kind)
-            // TODO: DO not create new contexts if it has not changed
-            let rec ntctx = createAnalyzerContext kind checker getAnalyzer setResult input (lazy ngctx) langName lang
-            and ngctx = { gctx.Value with Contexts = gctx.Value.Contexts.Add(langName, ntctx) }
-            let ctx = gctx.Value.Contexts.[ent.Language]
-            let errorCount = ctx.GlobalContext.Errors.Count
-            let! res = getAnalyzer(languages.[ent.Language]).Analyze(ent, ctx) 
-            ent.Errors <- ent.Errors @ [ for i in errorCount .. ctx.GlobalContext.Errors.Count - 1 -> ctx.GlobalContext.Errors.[i] ]
-            Log.trace(kind, "Entity [%s] %s DONE errors: %s, result: %O", ent.Language, AstOps.formatEntityKind ent.Kind, ent.Errors.Length, res)
-            setResult ent res } }
+      member x.GlobalContext = gctx.Value
+      member x.Context = localCtx
+      member x.Analyze(ent, ctx) = async {
+        if not (checker ent) then 
+          Log.trace(kind, "Entity [%s]: %s", ent.Language, AstOps.formatEntityKind ent.Kind)
+          // TODO: DO not create new contexts if it has not changed
+          let ngctx = ref None
+          let! ntctx = createAnalyzerContext kind checker getAnalyzer setResult input (lazy match ngctx.Value with Some v -> v | _ -> failwith "createAnalyzerContext: Initialization error") langName lang
+          ngctx := Some { gctx.Value with Contexts = gctx.Value.Contexts.Add(langName, ntctx) }
+          let ctx = gctx.Value.Contexts.[ent.Language]
+          let errorCount = ctx.GlobalContext.Errors.Count
+          let! res = getAnalyzer(languages.[ent.Language]).Analyze(ent, ctx) 
+          ent.Errors <- ent.Errors @ [ for i in errorCount .. ctx.GlobalContext.Errors.Count - 1 -> ctx.GlobalContext.Errors.[i] ]
+          Log.trace(kind, "Entity [%s] %s DONE errors: %s, result: %O", ent.Language, AstOps.formatEntityKind ent.Kind, ent.Errors.Length, res)
+          setResult ent res } } |> async.Return)
 
 let createCheckingContext = 
   createAnalyzerContext "typechecker"
     (fun ent -> ent.Type.IsSome)
-    (fun lang -> defaultArg lang.TypeChecker defaultTypeChecker)
+    (fun lang -> defaultArg lang.TypeChecker  defaultTypeChecker)
     (fun ent typ -> ent.Type <- Some typ)
 
 let createInterpreterContext = 
@@ -227,11 +229,14 @@ let createInterpreterContext =
     (fun ent res -> ent.Value <- Some res)
 
 let startAnalyzer createContext (ent:Entity) = async {
-  let rec gctx = 
-    let langContexts = languages |> Map.map (createContext (lazy gctx))
-    GlobalAnalyzerContext.Create(langContexts)
-  do! gctx.Contexts.[ent.Language].Analyze(ent, gctx.Contexts.[ent.Language])
-  Log.trace("typechecker", "Errors: %O", gctx.Errors.ToArray()) }
+  let gctx = ref None
+  let mutable langContexts = Map.empty
+  for (KeyValue(name, lang)) in languages do
+    let! ctx = createContext (lazy match gctx.Value with Some v -> v | _ -> failwith "startAnalyzer: Initialization error") name lang
+    langContexts <- Map.add name ctx langContexts
+  gctx := Some (GlobalAnalyzerContext.Create(langContexts))
+  do! gctx.Value.Value.Contexts.[ent.Language].Analyze(ent, gctx.Value.Value.Contexts.[ent.Language])
+  Log.trace("typechecker", "Errors: %O", gctx.Value.Value.Errors.ToArray()) }
 
 // ------------------------------------------------------------------------------------------------
 
