@@ -10,18 +10,19 @@ type EntityCode = string
 type EditorContext<'TEvent> = 
   abstract Refresh : unit -> unit
   abstract Trigger : 'TEvent -> unit
+  abstract TypeCheck : string * string -> Async<BindingResult>
 
-type EditorState<'TState> = 
+and EditorState<'TState> = 
   { StartEvaluation : bool option
     Node : Node<Block>
     State : 'TState }
 
-type Editor<'TEvent, 'TState> = 
+and Editor<'TEvent, 'TState> = 
   abstract Initialize : Node<Block> -> 'TState
   abstract Render : EditorContext<'TEvent> * 'TState -> list<Html.DomNode>
   abstract Update : 'TEvent * 'TState -> EditorState<'TState>
 
-type GlobalAnalyzerContext = 
+and GlobalAnalyzerContext = 
   { Contexts : Map<string, AnalyzerContext<obj>> 
     Errors : ResizeArray<Error> }
   static member Create(ctx) = { Errors = ResizeArray<_>(); Contexts = ctx }
@@ -31,7 +32,7 @@ and AnalyzerContext<'TData> =
   abstract GlobalContext : GlobalAnalyzerContext
   abstract Analyze : Entity * 'TData -> Async<unit>
 
-type Analyzer<'TInput, 'TOutput, 'TContext> =
+and Analyzer<'TInput, 'TOutput, 'TContext> =
   abstract CreateContext : 'TInput -> Async<'TContext>
   abstract Analyze : Entity * AnalyzerContext<'TContext> -> Async<'TOutput>
 

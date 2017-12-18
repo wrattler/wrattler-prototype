@@ -98,7 +98,7 @@ type CodeEditorEvent =
   | DisplayVariable of string
   | UpdateCode of bool * string
 
-let renderEditor (ctx:EditorContext<_>) state lang src =
+let renderEditor onCreated (ctx:EditorContext<_>) state lang src =
   [ h.custom 
       (fun elid ->
         h?div ["class" => "block-input"] [
@@ -109,11 +109,12 @@ let renderEditor (ctx:EditorContext<_>) state lang src =
         ] |> renderTo (Browser.document.getElementById(elid))
 
         let ed = createMonacoEditor (elid + "_editor") lang src 
+        onCreated (ctx, state.Node.Node.ID, ed)
         ed.onDidChangeModelContent(fun me ->
-          ctx.Trigger(UpdateCode(false, ed.getModel().getValue()))  ) |> ignore
+          ctx.Trigger(UpdateCode(false, ed.getModel().getValue(editor.EndOfLinePreference.LF, false)))  ) |> ignore
         ed.onKeyDown(fun ke -> 
           if ke.altKey && ke.keyCode = KeyCode.Enter then
-            ctx.Trigger(UpdateCode(true, ed.getModel().getValue()))  ) |> ignore
+            ctx.Trigger(UpdateCode(true, ed.getModel().getValue(editor.EndOfLinePreference.LF, false)))  ) |> ignore
         ed )
       (fun ed -> () )
 
@@ -153,12 +154,12 @@ let renderEditor (ctx:EditorContext<_>) state lang src =
     ]
   ]
 
-let createStandardEditor () =
+let createStandardEditor onCreated =
   { new Editor<CodeEditorEvent, CodeEditorState> with 
       member x.Initialize(node) = { Node = node; SelectedVariable = None }
       member x.Render(ctx, state) = 
         match state.Node.Node.BlockKind with
-        | :? CodeBlock as cb -> renderEditor ctx state cb.Language cb.Code
+        | :? CodeBlock as cb -> renderEditor onCreated ctx state cb.Language cb.Code
         | _ -> failwith "createStandardEditor: Wrong block kind"
       member x.Update(evt, state) = 
         match evt with 

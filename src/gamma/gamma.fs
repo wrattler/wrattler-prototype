@@ -86,11 +86,12 @@ let rec resolveProvider lookup ignoreFilter kind endpoint =
     Log.error("providers", "Cannot resolve provider '%s' (%s)", kind, endpoint) 
     failwith "resolveProvider: Cannot resolve type provider"
 
-let globals = buildGlobalsTable (fun lookup -> async {
-  let sample = 
-    TypeProviders.RestProvider.provideRestType 
+let globals = buildGlobalsTable (fun lookup -> 
+  [ TypeProviders.RestProvider.provideRestType 
       lookup (resolveProvider lookup false) "worldbank" "https://thegamma-services.azurewebsites.net/worldbank" ""
-  return [sample] })
+    TypeProviders.RestProvider.provideRestType 
+      lookup (resolveProvider lookup false) "datadiff" "http://localhost:10037/datadiff" "" ]
+  |> async.Return )
 
 // ------------------------------------------------------------------------------------------------
 
@@ -148,10 +149,14 @@ let gammaInterpreter =
 
    
 let language = 
+  Monaco.setupMonacoServices ()
   { new LanguagePlugin<_, _, _, _> with 
       member x.Interpreter = Some gammaInterpreter      
       member x.TypeChecker = Some gammaChecker
-      member x.Editor = Some(Wrattler.Rendering.createStandardEditor ())
+      member x.Editor = 
+        Wrattler.Rendering.createStandardEditor (fun (ctx, id, ed) -> 
+          let checker code = ctx.TypeCheck(id, code)
+          Monaco.configureMonacoEditor ed checker ) |> Some
 
       member x.Bind(ctx, block) =
         match block with 

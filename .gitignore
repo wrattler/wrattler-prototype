@@ -8,3 +8,4 @@ public/bundle.js
 src/obj/
 src/bin/
 .vs
+.paket/Paket.Resotre.targets

@@ -126,7 +126,7 @@ type SimpleCodeBlock(lang, code) =
 let rlang = 
   { new LanguagePlugin<obj, obj, _, _> with
       member x.Bind(ctx, nd) = bindBuiltinCodeBlock ctx (nd :?> CodeBlock)
-      member x.Editor = Some(Rendering.createStandardEditor ())
+      member x.Editor = Some(Rendering.createStandardEditor ignore)
       member x.TypeChecker = None
       member x.Interpreter = Some(builtinInterprter Interpreter.evalR)
       member x.Parse(code) = SimpleCodeBlock("r", code) :> _, [] }
@@ -134,7 +134,7 @@ let rlang =
 let jslang = 
   { new LanguagePlugin<obj, obj, _, _> with
       member x.Bind(ctx, nd) = bindBuiltinCodeBlock ctx (nd :?> CodeBlock)
-      member x.Editor = Some(Rendering.createStandardEditor ())
+      member x.Editor = Some(Rendering.createStandardEditor ignore)
       member x.Interpreter = Some(builtinInterprter Interpreter.evalJs)
       member x.TypeChecker = None
       member x.Parse(code) = SimpleCodeBlock("javascript", code) :> _, [] }
@@ -295,7 +295,26 @@ type Event =
   | StartEvaluation of bool
   | BlockEvent of id:string * obj
   | UpdateNodes of Node<Block> list * obj list
-  
+ 
+let typeCheck state id code = async {
+  try
+    let checkNodes = 
+      state.Nodes 
+      |> List.skipAfter (fun nd -> nd.Node.ID = id)
+      |> List.map (fun nd -> 
+          if nd.Node.ID <> id then nd else
+          match nd.Node.BlockKind with
+          | :? CodeBlock as cb -> 
+              let cb, errs = cb.WithCode(code)
+              { Range = nd.Range; Entity = None; Node = { ID = id; Errors = errs; BlockKind = cb } } 
+          | _ -> failwith "Expected code block")
+    let! bound, bindingResult = Binder.bind state.BindingContext checkNodes
+    do! startAnalyzer (createCheckingContext bindingResult) bound
+    return bindingResult 
+  with e ->
+    Log.exn("main", "Failed: %O", e) 
+    return raise e }
+
 let startEvaluation trigger state updateAsap evaluate = Async.StartImmediate <| async { 
   try
     let! bound, bindingResult = Binder.bind state.BindingContext state.Nodes
@@ -309,14 +328,15 @@ let startEvaluation trigger state updateAsap evaluate = Async.StartImmediate <| 
   with e ->
     Log.exn("main", "Failed: %O", e) }
 
-let render trigger state = 
+let render trigger globalState = 
   h.stable [
-    for nd, state in Seq.zip state.Nodes state.States do
+    for nd, state in Seq.zip globalState.Nodes globalState.States do
       match languages.[nd.Node.BlockKind.Language].Editor with
       | None -> ()
       | Some ed ->          
           let ctx = 
             { new EditorContext<_> with
+                member x.TypeCheck(id, code) = typeCheck globalState id code
                 member x.Trigger(evt) = trigger(BlockEvent(nd.Node.ID, evt))
                 member x.Refresh() = trigger Refresh }
           for idx, node in List.indexed (ed.Render(ctx, state)) do

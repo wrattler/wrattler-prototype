@@ -380,14 +380,12 @@ let (|ExprLeaf|ExprNode|) e =
 /// Find object member with the specified name 
 let (|FindMember|_|) (name:Name) (obj:ObjectType) = 
   obj.Members |> Seq.tryPick (fun m -> if m.Name = name then Some(m) else None) 
-  (*
+  
 /// Return the first metadata item with the specified context & type (or None)
 let pickMetaByType ctx typ metas = 
   metas |> List.tryPick (fun m -> 
     if m.Context = ctx && m.Type = typ then Some(m.Data)
     else None)
-
-*)
 
 
 // ------------------------------------------------------------------------------------------------

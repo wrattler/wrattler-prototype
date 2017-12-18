@@ -10,6 +10,7 @@
     <Compile Include="common/common.fs" />
     <Compile Include="common/html.fs" />
     <Compile Include="common/datastore.fs" />
+    <Compile Include="common/locations.fs" />
     <Compile Include="ast/ast.fs" />
     <Compile Include="ast/astops.fs" />
     <Compile Include="langs.fs" />
@@ -28,6 +29,8 @@
     <Compile Include="gamma/providers/fsharp.fs" />
     <Compile Include="gamma/providers/rest.fs" />
     <Compile Include="gamma/providers/pivot.fs" />
+    <Compile Include="gamma/services.fs" />
+    <Compile Include="gamma/monaco.fs" />
     <Compile Include="gamma/gamma.fs" />
     <Compile Include="main.fs" />
   </ItemGroup>

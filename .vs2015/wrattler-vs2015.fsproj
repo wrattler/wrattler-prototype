@@ -71,6 +71,9 @@
     <Compile Include="../src/common/datastore.fs">
       <Link>common/datastore.fs</Link>
     </Compile>
+    <Compile Include="../src/common/locations.fs">
+      <Link>common/locations.fs</Link>
+    </Compile>
     <Compile Include="../src/ast/ast.fs">
       <Link>ast/ast.fs</Link>
     </Compile>
@@ -124,6 +127,12 @@
     </Compile>
     <Compile Include="../src/gamma/providers/pivot.fs">
       <Link>gamma/providers/pivot.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/services.fs">
+      <Link>gamma/services.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/monaco.fs">
+      <Link>gamma/monaco.fs</Link>
     </Compile>
     <Compile Include="../src/gamma/gamma.fs">
       <Link>gamma/gamma.fs</Link>

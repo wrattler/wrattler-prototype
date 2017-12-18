@@ -338,6 +338,13 @@ module ListDictionary =
     dict |> Seq.sumBy (fun kv -> loop kv.Value)
 
 module List = 
+  let skipAfter f input = 
+    input
+    |> List.pairwise
+    |> List.takeWhile (fun (a, b) -> not (f a))
+    |> List.indexed
+    |> List.collect (fun (i, (a, b)) -> if i = 0 then [a;b] else [b])
+
   let groupWith f list = 
     let groups = ResizeArray<_ * ResizeArray<_>>()
     for e in list do

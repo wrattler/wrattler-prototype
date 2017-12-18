@@ -69,7 +69,7 @@ let bindEntity ctx lang kind =
 
 /// Assign entity to a node in parse tree
 let setEntity ctx node entity = 
-  ctx.Bound.Add({Start=12345;End=12345}, entity) // TODO: node.Range
+  ctx.Bound.Add(node.Range, entity) 
   node.Entity <- Some entity
   entity
 
