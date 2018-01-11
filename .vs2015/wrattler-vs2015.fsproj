@@ -92,11 +92,29 @@
     <Compile Include="../src/rendering.fs">
       <Link>rendering.fs</Link>
     </Compile>
+    <Compile Include="../src/gamma/libraries/general.fs">
+      <Link>gamma/libraries/general.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/libraries/series.fs">
+      <Link>gamma/libraries/series.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/libraries/tables.fs">
+      <Link>gamma/libraries/tables.fs</Link>
+    </Compile>    
+    <Compile Include="../src/gamma/libraries/compost.fs">
+      <Link>gamma/libraries/compost.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/libraries/interactive.fs">
+      <Link>gamma/libraries/interactive.fs</Link>
+    </Compile>
     <Compile Include="../src/gamma/ast.fs">
       <Link>gamma/ast.fs</Link>
     </Compile>
     <Compile Include="../src/gamma/astops.fs">
       <Link>gamma/astops.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/runtime.fs">
+      <Link>gamma/runtime.fs</Link>
     </Compile>
     <Compile Include="../src/gamma/errors.fs">
       <Link>gamma/errors.fs</Link>

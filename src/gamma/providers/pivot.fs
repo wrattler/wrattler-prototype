@@ -179,12 +179,7 @@ module Transform =
 // ------------------------------------------------------------------------------------------------
 
 open Wrattler.Gamma.TypeProviders.ProviderHelpers
-
-let trimLeft c (s:string) = s.ToCharArray() |> Array.skipWhile ((=) c) |> System.String
-let trimRight c (s:string) = s.ToCharArray() |> Array.rev |> Array.skipWhile ((=) c) |> Array.rev |> System.String
-
-let concatUrl (a:string) (b:string) =
-  (trimRight '/' a) + "/" + (trimLeft '/' b)
+open Wrattler.Gamma.TypeProvidersRuntime
 
 type PivotObject(members:seq<Member>) =
   member x.MemberNames = [ for m in members -> m.Name ]

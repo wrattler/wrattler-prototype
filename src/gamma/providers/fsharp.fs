@@ -10,6 +10,7 @@ open Fable.Import.Babel.BabelOperators
 open Wrattler.Common
 open Wrattler.Gamma
 open Wrattler.Gamma.Ast
+open Wrattler.Gamma.TypeProvidersRuntime
 open Fable.Import
 open ProviderHelpers
 
@@ -272,11 +273,6 @@ let importProvidedType url lookupNamed exp =
         let args = [ for n, o, t in args -> { MethodArgument.Name = n; Optional = o; Static = false; Type = substituteTypeParams (fun _ -> Some Type.Any) t } ] 
         Some { Member.Name = m.name; Type = Type.Method(args, retFunc); Metadata = []; Emitter = emitter }
       else None)
-
-  // Copied from 'runtime.fs'
-  let trimLeft c (s:string) = s.ToCharArray() |> Array.skipWhile ((=) c) |> System.String
-  let trimRight c (s:string) = s.ToCharArray() |> Array.rev |> Array.skipWhile ((=) c) |> Array.rev |> System.String
-  let concatUrl (a:string) (b:string) = (trimRight '/' a) + "/" + (trimLeft '/' b)
 
   let objectType = 
     match getTypeParameters exp.typepars with

@@ -9,6 +9,7 @@ open Wrattler.Gamma
 open Wrattler.Gamma.Ast
 open Wrattler.Gamma.AstOps
 open Wrattler.Gamma.TypeChecker
+open Wrattler.Ast.AstOps
 
 // ------------------------------------------------------------------------------------------------
 // Global provided types
@@ -86,12 +87,22 @@ let rec resolveProvider lookup ignoreFilter kind endpoint =
     Log.error("providers", "Cannot resolve provider '%s' (%s)", kind, endpoint) 
     failwith "resolveProvider: Cannot resolve type provider"
 
-let globals = buildGlobalsTable (fun lookup -> 
-  [ TypeProviders.RestProvider.provideRestType 
-      lookup (resolveProvider lookup false) "worldbank" "https://thegamma-services.azurewebsites.net/worldbank" ""
+let globals = buildGlobalsTable (fun lookup -> async {
+  let! js = 
+    TypeProviders.FSharpProvider.provideFSharpTypes
+      lookup "https://thegamma.net/lib/thegamma-0.1/libraries.json"
+  let wb = 
     TypeProviders.RestProvider.provideRestType 
-      lookup (resolveProvider lookup false) "datadiff" "http://localhost:10037/datadiff" "" ]
-  |> async.Return )
+      lookup (resolveProvider lookup false) "worldbank" "https://thegamma-services.azurewebsites.net/worldbank" ""
+  
+  let! ol = 
+    TypeProviders.Pivot.providePivotType 
+      "http://thegamma-services.azurewebsites.net/pdata/olympics" false "olympics" lookup
+    
+  let dd = 
+    TypeProviders.RestProvider.provideRestType 
+      lookup (resolveProvider lookup false) "datadiff" "http://localhost:10037/datadiff" "" 
+  return js @ [ ol; wb; dd ] })
 
 // ------------------------------------------------------------------------------------------------
 
@@ -119,10 +130,10 @@ let gammaChecker =
       member x.Analyze(ent, ctx) = async {
         match ent with 
         | { Kind = GammaEntity(ge) } ->
-            Log.trace("typechecker", "Checking entity '%s'", Wrattler.Ast.AstOps.formatEntityKind ent.Kind)
+            Log.trace("typechecker", "Checking entity '%s'", Wrattler.Ast.AstOps.entityCodeAndAntecedents ent.Kind |> snd)
             let! typ = TypeChecker.typeCheckEntityAsync ctx ent 
             let! typ = TypeChecker.evaluateDelayedType (typ :?> Type)
-            Log.trace("typechecker", "Type of entity '%s' is: %s", Wrattler.Ast.AstOps.formatEntityKind ent.Kind, formatType typ)
+            Log.trace("typechecker", "Type of entity '%s' is: %s", Wrattler.Ast.AstOps.entityCodeAndAntecedents ent.Kind |> snd, formatType typ)
             return typ :> _
 
         | { Kind = CodeBlock("gamma", body, _) } ->
@@ -158,13 +169,23 @@ let language =
           let checker code = ctx.TypeCheck(id, code)
           Monaco.configureMonacoEditor ed checker ) |> Some
 
-      member x.Bind(ctx, block) =
+      member x.Bind(ctx, block) = async {
+        let! globals = Async.AwaitFuture globals
+        let globalsNondelay = ResizeArray<_>()
+        for g in globals do
+          match g.Kind with
+          | GammaEntity(GammaEntityKind.GlobalValue(n, _)) -> 
+              if g.Type <> None then
+                let! t = TypeChecker.evaluateDelayedType (g.Type.Value :?> _)
+                g.Type <- Some (t :> _)
+              globalsNondelay.Add(n, g)
+              | _ -> () 
         match block with 
         | :? GammaBlockKind as block ->
-            let prog = Binder.bindProgram (Binder.createContext ctx []) block.Program
+            let prog = Binder.bindProgram (Binder.createContext ctx (List.ofSeq globalsNondelay)) block.Program 
             let block = CodeBlock("gamma", prog, []) |> bindEntity ctx "gamma"
-            async.Return(block, [])
-        | _ -> failwith "Gamma.LanguagePlugin.Bind: Expected GammaBlockKind" 
+            return block, []
+        | _ -> return failwith "Gamma.LanguagePlugin.Bind: Expected GammaBlockKind" }
 
       member x.Parse(code:string) = 
         let program, errors = Parser.parseProgram code

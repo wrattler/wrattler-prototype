@@ -18,7 +18,15 @@ JavaScript blocks to do visualizations
 ### Testing The Gamma
 
 ```gamma
-let test = 40 + "hello"
+let teams = 
+  olympics
+    .'group data'.'by Year'.'count distinct Team'.then
+    .'sort data'.'by Year'.then
+    .'get series'.'with key Year'.'and value Team'
+compost.charts.line(teams)
+  .setAxisX(minValue=1896, maxValue=2020)
+  .setTitle("Number of disticnt teams in Olympics")
+  .show("test")
 ```
 
 ### Analysing data using R

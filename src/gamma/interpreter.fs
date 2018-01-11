@@ -27,14 +27,14 @@ let storeArguments (values:Value list) =
         NumericLiteral(float i, None), true, None ))
 
 /// Evalaute Babel expression, assuming `_stored` is in scope
-let evaluateExpression (_stored:obj[]) (expr:Expression) =
+let evaluateExpression (_stored:obj[]) (expr:Expression) : obj =
   let prog = { Program.location = None; Program.body = [ExpressionStatement(expr, None)] }
   let code = Babel.transformFromAst(Serializer.serializeProgram prog, "", { presets = [| "es2015" |] })
   Log.trace("interpreter", "Interpreter evaluating: %O using values %O", code.code, _stored)
   try
     // HACK (1/2): Get fable to reference everything
-    (*
     let s = TheGamma.Series.series<int, int>.create(async { return [||] }, "", "", "") 
+    (*
     TheGamma.TypeProvidersRuntime.RuntimeContext("lol", "", "troll") |> ignore
     TheGamma.TypeProvidersRuntime.trimLeft |> ignore
     TheGamma.TypeProvidersRuntime.convertTupleSequence |> ignore
@@ -45,6 +45,16 @@ let evaluateExpression (_stored:obj[]) (expr:Expression) =
     TheGamma.placeholder.create("") |> ignore
     TheGamma.Interactive.youguess.line |> ignore
     *)
+    let compost = 
+      Fable.Core.JsInterop.createObj [ 
+        "charts", box TheGamma.Interactive.compost.charts ]
+    let series = 
+      Fable.Core.JsInterop.createObj [
+        "create", box (fun a b c d -> TheGamma.Series.series<_, _>.create(a, b, c, d))
+        (*"ordinal", box TheGamma.Series.series<_, _>.ordinal
+        "values", box TheGamma.Series.series<_, _>.values *) ]
+    let PivotContext a b = TypeProvidersRuntime.PivotContext(a, b)
+    
     // HACK (2/2) The name `_stored` may appear in the generated code!
     _stored.Length |> ignore
     eval(code.code)
@@ -88,9 +98,11 @@ let rec evaluateEntity (ctx:Languages.AnalyzerContext<_>) (e:Entity) : Wrattler.
   | GammaEntity(GammaEntityKind.Constant(Constant.Empty)) -> CustomValue(unbox null)
 
   | GammaEntity(GammaEntityKind.Variable(_, value)) ->
+      Log.trace("interpreter", "Gamma - evaluating variable: %O", value)
       getValue value
 
   | GammaEntity(GammaEntityKind.GlobalValue(name, expr)) ->
+      Log.trace("interpreter", "Gamma - Evaluating global value: %s (%O)", name, expr)
       match expr with
       | Some expr -> CustomValue(evaluateExpression [| |] expr)
       | _ -> Nothing
@@ -127,7 +139,7 @@ let rec evaluateEntity (ctx:Languages.AnalyzerContext<_>) (e:Entity) : Wrattler.
       let pars = expectedArgs |> List.mapi (fun i ma ->
         if i < positionBased.Length then positionBased.[i]
         elif nameBased.ContainsKey(ma.Name) then nameBased.[ma.Name]
-        else (unbox null) )
+        else CustomValue(null) )
 
       match inst with 
       | { Kind = GammaEntity(GammaEntityKind.MemberAccess { 
@@ -135,12 +147,14 @@ let rec evaluateEntity (ctx:Languages.AnalyzerContext<_>) (e:Entity) : Wrattler.
           let instValue = getValue inst
           match inst.Type with 
           | Some(GammaType(Type.Object(FindMember n mem))) ->
-              evaluateExpr (instValue::pars) (fun stored -> mem.Emitter.Emit(List.head stored) /@/ List.tail stored)
+              Log.trace("interpreter", "Gamma - Evaluating call to %s on %O", mem, inst)
+              CustomValue(evaluateExpr (instValue::pars) (fun stored -> mem.Emitter.Emit(List.head stored) /@/ List.tail stored))
           | _ ->
-              evaluateExpr (instValue::pars) (fun stored -> ((List.head stored) /?/ str n) /@/ List.tail stored)
+              Log.trace("interpreter", "Gamma - Evaluating application on %O", inst)
+              CustomValue(evaluateExpr (instValue::pars) (fun stored -> ((List.head stored) /?/ str n) /@/ List.tail stored))
       | _ ->
           let instValue = getValue inst
-          evaluateExpr (instValue::pars) (fun stored -> List.head stored /@/ List.tail stored)
+          CustomValue(evaluateExpr (instValue::pars) (fun stored -> List.head stored /@/ List.tail stored))
 
   | GammaEntity(GammaEntityKind.Member(inst, _)) ->
       Log.error("interpreter", "typeCheckEntity: Member access is missing member name!")

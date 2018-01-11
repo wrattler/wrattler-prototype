@@ -17,8 +17,14 @@
     <Compile Include="analyzer/binder.fs" />
     <Compile Include="builtin/interpreter.fs" />
     <Compile Include="rendering.fs" />
+    <Compile Include="gamma/libraries/general.fs" />
+    <Compile Include="gamma/libraries/series.fs" />
+    <Compile Include="gamma/libraries/tables.fs" />
+    <Compile Include="gamma/libraries/compost.fs" />
+    <Compile Include="gamma/libraries/interactive.fs" />
     <Compile Include="gamma/ast.fs" />
     <Compile Include="gamma/astops.fs" />
+    <Compile Include="gamma/runtime.fs" />
     <Compile Include="gamma/errors.fs" />
     <Compile Include="gamma/tokenizer.fs" />
     <Compile Include="gamma/parser.fs" />

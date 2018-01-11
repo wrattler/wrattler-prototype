@@ -228,6 +228,9 @@ let rec evaluateDelayedType (t:Type) = async {
 /// all antecedants to make sure that no antecedant is delayed  
 /// (this way, `getType` can be ordinary synchronouus function)
 let typeCheckEntityAsync (ctx:Languages.AnalyzerContext<CheckingContext>) (e:Entity) = async {
+  for ant in e.Antecedents do
+    if ant.Type.IsNone then 
+      do! Async.Ignore(ctx.Analyze(ant, ctx.Context))
   match e.Kind with
   | GammaEntity(GammaEntityKind.Call({ Kind = GammaEntity instName } as inst, { Kind = GammaEntity(GammaEntityKind.ArgumentList(ents)) } & arglist)) ->
       let! typ = 
@@ -241,9 +244,6 @@ let typeCheckEntityAsync (ctx:Languages.AnalyzerContext<CheckingContext>) (e:Ent
             async.Return Type.Any
       return typ :> Wrattler.Ast.Type
   | _ -> 
-      for ant in e.Antecedents do
-        if ant.Type.IsNone then 
-          do! Async.Ignore(ctx.Analyze(ant, ctx.Context))
       return typeCheckEntity ctx e }
 
 

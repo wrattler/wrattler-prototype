@@ -12,6 +12,7 @@ open Fable.Import
 open Wrattler.Ast
 open Wrattler.Gamma
 open Wrattler.Gamma.Ast
+open Wrattler.Gamma.TypeProvidersRuntime
 
 // ------------------------------------------------------------------------------------------------
 // Types to represent JSON data returned by REST service
@@ -78,12 +79,6 @@ let rec fromRawType (json:obj) =
 // ------------------------------------------------------------------------------------------------
 // Code generation for provided members
 // ------------------------------------------------------------------------------------------------
- 
-let trimLeft c (s:string) = s.ToCharArray() |> Array.skipWhile ((=) c) |> System.String
-let trimRight c (s:string) = s.ToCharArray() |> Array.rev |> Array.skipWhile ((=) c) |> Array.rev |> System.String
-
-let concatUrl (a:string) (b:string) =
-  (trimRight '/' a) + "/" + (trimLeft '/' b)
 
 let load url cookies = async {
   let! json = Http.Request("GET", url, cookies=cookies)

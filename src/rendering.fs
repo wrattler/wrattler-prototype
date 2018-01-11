@@ -25,7 +25,7 @@ let rec renderHtmlTree tree =
 let renderTable url trigger = 
   match Datastore.tryFetchPreview url trigger with 
   | None ->
-      h?div ["class" => "preview"] [ h?p [] [text "Loading..."] ]
+      h?div ["class" => "preview"] [ h?pp [] [text "Loading..."] ]
   | Some objs ->
       let first = Array.head objs
       let props = JsHelpers.properties(first)
@@ -150,7 +150,7 @@ let renderEditor onCreated (ctx:EditorContext<_>) state lang src =
               if v = selected then 
                 yield renderTable data ctx.Refresh
       | ent ->
-          yield h?p [] [ text (sprintf "Entity: %A" ent) ]
+          yield h?ppp [] [ text (sprintf "Entity: %A" ent) ]
     ]
   ]
 
