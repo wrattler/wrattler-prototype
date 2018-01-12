@@ -30,11 +30,11 @@
     <Compile Include="gamma/parser.fs" />
     <Compile Include="gamma/binder.fs" />
     <Compile Include="gamma/typechecker.fs" />
-    <Compile Include="gamma/interpreter.fs" />
     <Compile Include="gamma/providers/providers.fs" />
     <Compile Include="gamma/providers/fsharp.fs" />
     <Compile Include="gamma/providers/rest.fs" />
     <Compile Include="gamma/providers/pivot.fs" />
+    <Compile Include="gamma/interpreter.fs" />
     <Compile Include="gamma/services.fs" />
     <Compile Include="gamma/monaco.fs" />
     <Compile Include="gamma/gamma.fs" />

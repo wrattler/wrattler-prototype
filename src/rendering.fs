@@ -25,7 +25,7 @@ let rec renderHtmlTree tree =
 let renderTable url trigger = 
   match Datastore.tryFetchPreview url trigger with 
   | None ->
-      h?div ["class" => "preview"] [ h?pp [] [text "Loading..."] ]
+      h?div ["class" => "preview"] [ h?p [] [text "Loading..."] ]
   | Some objs ->
       let first = Array.head objs
       let props = JsHelpers.properties(first)
@@ -98,7 +98,7 @@ type CodeEditorEvent =
   | DisplayVariable of string
   | UpdateCode of bool * string
 
-let renderEditor onCreated (ctx:EditorContext<_>) state lang src =
+let renderEditor renderEntity onCreated (ctx:EditorContext<_>) state lang src =
   [ h.custom 
       (fun elid ->
         h?div ["class" => "block-input"] [
@@ -126,40 +126,18 @@ let renderEditor onCreated (ctx:EditorContext<_>) state lang src =
     ]
 
     h?div ["class" => "block-output"] [
-      match state.Node.Entity with
-      | Some { Kind = EntityKind.CodeBlock("javascript", { Kind = EntityKind.Code(_, code, _); Value = Some(Outputs outs) }, _) } ->
-          // TODO: Use entity symbol for h.delayed
-          for out, i in Seq.zip outs [0 .. outs.Length-1] do
-            let id = sprintf "output_%d_%d" i (hash code)
-            yield h.delayed id (text "") (fun id -> out id)
-
-      | Some { Kind = EntityKind.CodeBlock(_, _, vars) } ->
-          let vars = vars |> List.choose (function { Kind = DataFrame(var, _); Value = Some(Frame value) } -> Some(var, value) | _ -> None)
-          if not (List.isEmpty vars) then
-            let selected = defaultArg state.SelectedVariable (fst(List.head vars))
-            yield h?ul ["class" => "nav nav-pills"] [
-              for v, data in vars do 
-              yield h?li ["class" => "nav-item"] [
-                h?a [
-                  "class" => (if v = selected then "nav-link active" else "nav-link")
-                  "click" =!> fun _ _ -> ctx.Trigger(DisplayVariable(v))
-                  "href" => "#" ] [text v]
-              ]
-            ]
-            for v, data in vars do
-              if v = selected then 
-                yield renderTable data ctx.Refresh
-      | ent ->
-          yield h?ppp [] [ text (sprintf "Entity: %A" ent) ]
+      match state.Node.Entity with 
+      | Some ent -> yield! renderEntity ctx state ent
+      | None -> yield h?p [] [ text "No entity" ] 
     ]
   ]
 
-let createStandardEditor onCreated =
+let createStandardEditor renderEntity onCreated =
   { new Editor<CodeEditorEvent, CodeEditorState> with 
       member x.Initialize(node) = { Node = node; SelectedVariable = None }
       member x.Render(ctx, state) = 
         match state.Node.Node.BlockKind with
-        | :? CodeBlock as cb -> renderEditor onCreated ctx state cb.Language cb.Code
+        | :? CodeBlock as cb -> renderEditor renderEntity onCreated ctx state cb.Language cb.Code
         | _ -> failwith "createStandardEditor: Wrong block kind"
       member x.Update(evt, state) = 
         match evt with 

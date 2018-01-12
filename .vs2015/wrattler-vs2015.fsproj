@@ -131,9 +131,6 @@
     <Compile Include="../src/gamma/typechecker.fs">
       <Link>gamma/typechecker.fs</Link>
     </Compile>
-    <Compile Include="../src/gamma/interpreter.fs">
-      <Link>gamma/interpreter.fs</Link>
-    </Compile>
     <Compile Include="../src/gamma/providers/providers.fs">
       <Link>gamma/providers/providers.fs</Link>
     </Compile>
@@ -145,6 +142,9 @@
     </Compile>
     <Compile Include="../src/gamma/providers/pivot.fs">
       <Link>gamma/providers/pivot.fs</Link>
+    </Compile>
+    <Compile Include="../src/gamma/interpreter.fs">
+      <Link>gamma/interpreter.fs</Link>
     </Compile>
     <Compile Include="../src/gamma/services.fs">
       <Link>gamma/services.fs</Link>

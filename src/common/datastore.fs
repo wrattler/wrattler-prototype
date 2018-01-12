@@ -3,7 +3,14 @@
 open Fable.Core
 open Wrattler.Common
 
+let dataStoreUrl = "http://localhost:7102"
+
 let cachedFrames = System.Collections.Generic.Dictionary<string, obj[]>()
+
+let storeFrame hash file json = async {
+  let url = sprintf "%s/%s/%s" dataStoreUrl hash file
+  let! _ = Http.Request("PUT", url, jsonStringify json) 
+  return url }
 
 let fetchFrame url = async {
   if not (cachedFrames.ContainsKey(url)) then

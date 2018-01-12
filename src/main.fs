@@ -26,7 +26,6 @@ let teams =
 compost.charts.line(teams)
   .setAxisX(minValue=1896, maxValue=2020)
   .setTitle("Number of disticnt teams in Olympics")
-  .show("test")
 ```
 
 ### Analysing data using R
@@ -42,6 +41,7 @@ we define a frame `data` that we will access later.
 
 ```r
 data <- iris
+test <- teams
 ```
 
 Now that we have data, we can do some analysis. Note that the `data` frame is passed from 
@@ -90,7 +90,7 @@ let bindBuiltinCodeBlock ctx (cb:CodeBlock) = async {
   Log.trace("binder", " -> Known variables: %s", String.concat "," (Seq.map fst (Map.toSeq ctx.Frames)))
   let frames = ResizeArray<_>()
   for v, f in Map.toSeq ctx.Frames do
-    do! ctx.Evaluate f
+    do! ctx.Evaluate (BindingResult(ctx.Bound.ToArray())) f
     match f.Value with 
     | Some(Frame data) -> frames.Add(v, data)
     | _ -> ()
@@ -131,10 +131,44 @@ type SimpleCodeBlock(lang, code) =
     member x.Code = code
     member x.WithCode(newCode) = SimpleCodeBlock(lang, newCode) :> _, []
 
+open Wrattler.Html
+
+let renderJsEntity ctx state entity = 
+  [ match entity with
+    | { Kind = EntityKind.CodeBlock("javascript", { Kind = EntityKind.Code(_, code, _); Value = Some(Outputs outs) }, _) } ->
+        // TODO: Use entity symbol for h.delayed
+        for out, i in Seq.zip outs [0 .. outs.Length-1] do
+          let id = sprintf "output_%d_%d" i (hash code)
+          yield h.delayed id (text "") (fun id -> out id) 
+    | _ -> 
+        yield h?ppp [] [ text (sprintf "No JS. Entity: %A" entity) ] ]
+
+let renderFrames (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity =
+  [ match entity with 
+    | { Kind = EntityKind.CodeBlock(_, _, vars) } ->
+        let vars = vars |> List.choose (function { Kind = DataFrame(var, _); Value = Some(Frame value) } -> Some(var, value) | _ -> None)
+        if not (List.isEmpty vars) then
+          let selected = defaultArg state.SelectedVariable (fst(List.head vars))
+          yield h?ul ["class" => "nav nav-pills"] [
+            for v, data in vars do 
+            yield h?li ["class" => "nav-item"] [
+              h?a [
+                "class" => (if v = selected then "nav-link active" else "nav-link")
+                "click" =!> fun _ _ -> ctx.Trigger(Rendering.DisplayVariable(v))
+                "href" => "#" ] [text v]
+            ]
+          ]
+          for v, data in vars do
+            if v = selected then 
+              yield Rendering.renderTable data ctx.Refresh
+    | ent ->
+        yield h?p [] [ text (sprintf "No frames. Entity: %A" ent) ] ]
+
+
 let rlang = 
   { new LanguagePlugin<obj, obj, _, _> with
       member x.Bind(ctx, nd) = bindBuiltinCodeBlock ctx (nd :?> CodeBlock)
-      member x.Editor = Some(Rendering.createStandardEditor ignore)
+      member x.Editor = Some(Rendering.createStandardEditor renderFrames ignore)
       member x.TypeChecker = None
       member x.Interpreter = Some(builtinInterprter Interpreter.evalR)
       member x.Parse(code) = SimpleCodeBlock("r", code) :> _, [] }
@@ -142,7 +176,7 @@ let rlang =
 let jslang = 
   { new LanguagePlugin<obj, obj, _, _> with
       member x.Bind(ctx, nd) = bindBuiltinCodeBlock ctx (nd :?> CodeBlock)
-      member x.Editor = Some(Rendering.createStandardEditor ignore)
+      member x.Editor = Some(Rendering.createStandardEditor renderJsEntity ignore)
       member x.Interpreter = Some(builtinInterprter Interpreter.evalJs)
       member x.TypeChecker = None
       member x.Parse(code) = SimpleCodeBlock("javascript", code) :> _, [] }
@@ -388,7 +422,10 @@ let update trigger globalState evt =
       
 let state =
   let nodes = parseMarkdown (Markdown.markdown.parse(demo))
-  { BindingContext = Binder.createContext languages (startAnalyzer (createInterpreterContext ()))
+  { BindingContext = 
+      Binder.createContext languages (fun bound ent -> async {
+        do! startAnalyzer (createCheckingContext bound) ent
+        do! startAnalyzer (createInterpreterContext ()) ent })
     Nodes = nodes
     States = 
       [ for nd in nodes ->

@@ -67,7 +67,7 @@ type table<'k,'v> =
     { t with addedColumns = (name, f)::t.addedColumns }
 
   member t.render() =
-    let row showKey (el:string) k (things:seq<DomNode>) =
+    let row (showKey, el:string, k, things:seq<DomNode>) =
       let withTitle = function
         | DomNode.Text s -> h?div ["title" => s] [text s]
         | nd -> nd
@@ -76,11 +76,11 @@ type table<'k,'v> =
         for t in things -> h?(el) [] [ withTitle t ] 
       ]
 
-    let makeTable showKey k header body = 
+    let makeTable (showKey, k, header, body) = 
       h?table ["class" => "thegamma-table"] [
         if not (String.IsNullOrWhiteSpace t.data.seriesName) then
           yield h?caption [] [ text t.data.seriesName ]
-        yield h?thead [] [ row showKey "th" k header ]
+        yield h?thead [] [ row(showKey, "th", k, header) ]
         yield h?tbody [] body
       ]
 
@@ -110,7 +110,7 @@ type table<'k,'v> =
               else yield text t.data.valueName 
               for k, _ in t.addedColumns -> text k ]
           let showKey = match t.showKey with Some sk -> sk | _ -> not (isObject first)
-          return
+          let rows = 
             [ for k, v in vs ->
                 let formattedVals =
                   [ if isObject v then 
@@ -125,14 +125,17 @@ type table<'k,'v> =
                     elif isNaN (unbox v) then yield text ""
                     else yield text (niceNumber v 2) 
                     for _, f in t.addedColumns -> formatAdded (f v) ] 
-                row showKey "td" (unbox k) formattedVals ]
-            |> makeTable showKey t.data.keyName headers
+                row(showKey, "td", unbox k, formattedVals) ]
+          let table = makeTable (showKey, t.data.keyName, headers, rows)
+          Log.trace("gui", "Rendered table: %O", table) 
+          return table
       with e ->
         Log.exn("live", "Getting data for table failed: %O", e) 
         return raise e }
 
   member t.show(outputId) =
     async { let! dom = t.render()
+            //let dom = h?p [] [text "wtffff"]
             dom |> renderTo (document.getElementById(outputId)) }
     |> Async.StartImmediate
 

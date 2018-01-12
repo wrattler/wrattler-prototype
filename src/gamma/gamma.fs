@@ -129,6 +129,10 @@ let gammaChecker =
 
       member x.Analyze(ent, ctx) = async {
         match ent with 
+        | { Kind = DataFrame(_, body) } ->
+            do! ctx.Analyze(body, ctx.Context)
+            return body.Type.Value
+
         | { Kind = GammaEntity(ge) } ->
             Log.trace("typechecker", "Checking entity '%s'", Wrattler.Ast.AstOps.entityCodeAndAntecedents ent.Kind |> snd)
             let! typ = TypeChecker.typeCheckEntityAsync ctx ent 
@@ -148,7 +152,26 @@ let gammaInterpreter =
       member x.CreateContext(_) = 
         async.Return { Interpreter.EvaluationContext.Results = ResizeArray<_>() }
       member x.Analyze(ent, ctx) = async {
+        if ent.Type.IsNone then failwith "GammaLanguage: Interpreter requires type checking!"
         match ent with 
+        | { Kind = DataFrame(_, body) } ->
+            do! ctx.Analyze(body, ctx.Context)
+            match ent.Type with
+            | Some(GammaType(Type.Object(:? Wrattler.Gamma.TypeProviders.FSharpProvider.GenericType as gt))) 
+                when gt.TypeDefinition.FullName.EndsWith("/series") -> 
+                let s = 
+                  match body.Value with 
+                  | Some(CustomValue v) -> unbox<TheGamma.Series.series<obj,obj>> v
+                  | _ -> failwith "evaluateEntity: Expected value that is a series"
+                let! data = Async.AwaitFuture s.data
+                let json = 
+                  if isObject (snd data.[0]) then Array.map snd data 
+                  else data |> Array.map (fun (k, v) -> Fable.Core.JsInterop.createObj ["key", k; "value", v])
+                let! url = Wrattler.Datastore.storeFrame ent.Symbol.ID "it" json
+                return Value.Frame(url) 
+            | _ -> 
+                return Value.Nothing 
+
         | { Kind = GammaEntity(ge) } ->
             return! Interpreter.evaluate ctx ent
         | { Kind = CodeBlock("gamma", body, _) } ->
@@ -157,15 +180,59 @@ let gammaInterpreter =
         | _ -> 
             return failwith "GammaLanguage: Wrong entity (eval)" } }
 
+open Wrattler
+open Wrattler.Html
 
-   
+[<Fable.Core.Emit("$0.show($1)")>]
+let callShow (o:obj) (id:string) : unit = failwith "JS"
+
+let renderGamma (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity =
+  [ match entity with 
+    | { Kind = EntityKind.CodeBlock(_, { Kind = GammaEntity(GammaEntityKind.Program cmds) }, _) } ->
+        let selected = state.SelectedVariable
+        let listItems = cmds |> List.mapi (fun i cmd ->
+          let label, display = 
+            match cmd.Kind with 
+            | GammaEntity(GammaEntityKind.LetCommand({ Kind = GammaEntity(GammaEntityKind.Variable(v, _)) }, frame, value)) -> v, value
+            | GammaEntity(GammaEntityKind.RunCommand(value)) -> "run", value
+            | _ -> failwith "renderGamma: Expected let or run command" 
+          let id = sprintf "%s-%d" label i
+          id, label, if (selected = None && i = 0) || Some id = selected then Some display else None )
+        yield h?ul ["class" => "nav nav-pills"] [
+          for id, label, display in listItems do
+            yield h?li ["class" => "nav-item"] [
+              h?a [
+                "class" => (if display.IsSome then "nav-link active" else "nav-link")
+                "click" =!> fun _ _ -> ctx.Trigger(Rendering.DisplayVariable(id))
+                "href" => "#" ] [text label]
+            ]
+          ]
+        yield h?div ["class"=>"thegamma"] [
+          for id, _, display in listItems do
+            if display.IsSome then
+              Log.trace("gui", "Show entity %O", display.Value)
+            match display with
+            | Some { Value = Some(CustomValue v); Type = Some(GammaType(Type.Object(FindMember "show" mem))) } -> 
+                yield h.delayed (id + "output") (text "Loading output...") (fun id -> callShow v id)
+            | Some { Value = Some(CustomValue v); Type = Some(GammaType(Type.Object(:? FSharpProvider.GenericType as gt))) } 
+                  when gt.TypeDefinition.FullName.EndsWith("/series") -> 
+                yield h.delayed (id + "table") (text "Loading output...") (fun id -> TheGamma.table<obj,obj>.create(unbox v).show(id))
+            | Some { Value = None } -> 
+                yield h?p [] [ text "Not evaluated yet..." ]
+            | Some display -> 
+                yield h?p [] [ text (sprintf "Something else: %O" display) ]
+            | _ -> ()
+          ]
+    | ent ->
+        yield h?p [] [ text (sprintf "Not a gamma program. Entity: %A" ent) ] ]
+
 let language = 
   Monaco.setupMonacoServices ()
   { new LanguagePlugin<_, _, _, _> with 
       member x.Interpreter = Some gammaInterpreter      
       member x.TypeChecker = Some gammaChecker
       member x.Editor = 
-        Wrattler.Rendering.createStandardEditor (fun (ctx, id, ed) -> 
+        Wrattler.Rendering.createStandardEditor renderGamma (fun (ctx, id, ed) -> 
           let checker code = ctx.TypeCheck(id, code)
           Monaco.configureMonacoEditor ed checker ) |> Some
 
@@ -182,9 +249,17 @@ let language =
               | _ -> () 
         match block with 
         | :? GammaBlockKind as block ->
-            let prog = Binder.bindProgram (Binder.createContext ctx (List.ofSeq globalsNondelay)) block.Program 
+            let prog = Binder.bindProgram (Wrattler.Gamma.Binder.createContext ctx (List.ofSeq globalsNondelay)) block.Program 
             let block = CodeBlock("gamma", prog, []) |> bindEntity ctx "gamma"
-            return block, []
+            match prog.Kind with
+            | GammaEntity(GammaEntityKind.Program(cmds)) ->
+                let exports = 
+                  cmds |> List.choose (function
+                    | { Kind = GammaEntity(GammaEntityKind.LetCommand({ Kind = GammaEntity(GammaEntityKind.Variable(v, _)) }, frame, value)) } ->
+                      Some(v, frame)
+                    | _ -> None)
+                return block, exports
+            | _ -> return failwith "Gamma.LanguagePlugin.Bind: Expected Program entity"
         | _ -> return failwith "Gamma.LanguagePlugin.Bind: Expected GammaBlockKind" }
 
       member x.Parse(code:string) = 

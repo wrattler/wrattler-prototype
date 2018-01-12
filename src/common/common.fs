@@ -133,7 +133,7 @@ let getColor =
   let mutable index = -1
   let colors = 
     [| "#393b79"; "#637939"; "#8c6d31"; "#843c39"; "#7b4173" 
-       "#3182bd"; "#e6550d"; "#31a354"; "#756bb1"; "#636363" |]
+       "#3182bd"; "#31a354"; "#756bb1"; "#636363"; "#e6550d" |]
   fun cat -> 
     if not (colorMap.ContainsKey(cat)) then
       index <- (index + 1) % colors.Length

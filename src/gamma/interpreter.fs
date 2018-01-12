@@ -205,7 +205,7 @@ let rec evaluateEntity (ctx:Languages.AnalyzerContext<_>) (e:Entity) : Wrattler.
   | GammaEntity(GammaEntityKind.CallSite _) ->
       Value.Nothing
 
-  | GammaEntity(GammaEntityKind.LetCommand({ Kind = GammaEntity(GammaEntityKind.Variable(n, _)) }, body)) ->
+  | GammaEntity(GammaEntityKind.LetCommand({ Kind = GammaEntity(GammaEntityKind.Variable(n, _)) }, frame, body)) ->
       ctx.Context.Results.Add((Some n, getValue body))
       Value.Nothing
 

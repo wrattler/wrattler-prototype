@@ -67,6 +67,7 @@ let setEntity ctx node entity =
   entity
 *)
 
+let bindParentEntity = bindEntity
 
 let bindEntity ctx ent = 
   bindEntity ctx.Parent "gamma" (EntityKind.CustomEntity(GammaEntityWrapper(ent)))
@@ -152,7 +153,8 @@ let bindCommand ctx (node:Node<_>) =
   | Command.Let(v, e) ->
       let body = bindExpression ctx e 
       let var = bindEntity ctx (GammaEntityKind.Variable(v.Node, body)) |> setEntity ctx v
-      let node = bindEntity ctx (GammaEntityKind.LetCommand(var, body)) |> setEntity ctx node
+      let frame = bindParentEntity ctx.Parent "gamma" (EntityKind.DataFrame(v.Node, body))
+      let node = bindEntity ctx (GammaEntityKind.LetCommand(var, frame, body)) |> setEntity ctx node
       { ctx with Variables = Map.add v.Node var ctx.Variables }, node
 
   | Command.Expr(e) ->
@@ -166,7 +168,7 @@ let bindProgram ctx (program:Program) =
     program.Body.Node |> List.fold (fun (ctx, nodes) cmd -> 
       let ctx, node = bindCommand ctx cmd
       ctx, node::nodes) (ctx, [])  
-  bindEntity ctx (GammaEntityKind.Program(ents)) |> setEntity ctx program.Body
+  bindEntity ctx (GammaEntityKind.Program(List.rev ents)) |> setEntity ctx program.Body
   
 /// Create a new binding context - this stores cached entities
 let createContext ctx (globals:list<string * Entity>) =

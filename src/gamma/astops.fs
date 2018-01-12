@@ -211,7 +211,7 @@ let formatWhiteBeforeExpr nd =
   String.concat "" [ for t in wa -> formatToken t.Token ]
   *)
 /// Format entity kind into something readable
-let formatEntityKind = function
+let formatEntityKind = function  
   | GammaEntityKind.GlobalValue _ -> "global value"
   | GammaEntityKind.Variable _ -> "variable"
   | GammaEntityKind.Binding _ -> "binding"
@@ -239,7 +239,7 @@ let formatEntityKind = function
 let rec entityCodeAndAntecedents = function
   | GammaEntityKind.Program(ans) -> ans, "<program/>"
   | GammaEntityKind.RunCommand(an) -> [an], "<do/>"
-  | GammaEntityKind.LetCommand(an1, an2) -> [an1; an2], "<let/>"
+  | GammaEntityKind.LetCommand(an1, f, an2) -> [an1; f; an2], "<let/>"
   | GammaEntityKind.Operator(an1, op, an2) -> [an1; an2], sprintf "<operator op='%s'/>" (formatToken (TokenKind.Operator op))
   | GammaEntityKind.List(ans) -> ans, "<list/>"
   | GammaEntityKind.Constant(Constant.String s) -> [], sprintf "<const string='%s'/>" s

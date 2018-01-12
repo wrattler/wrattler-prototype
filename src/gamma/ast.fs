@@ -115,8 +115,8 @@ type [<RequireQualifiedAccess>] GammaEntityKind =
   // Entities that represent root node, program and commands
   | Program of commands:Entity list
   | RunCommand of body:Entity
-  | LetCommand of variable:Entity * assignment:Entity
-
+  | LetCommand of variable:Entity * export:Entity * assignment:Entity
+  
   // Standard constructs of the language
   | List of elements:Entity list
   | Constant of Constant

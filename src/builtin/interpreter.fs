@@ -13,12 +13,12 @@ let evalR (ctx:Languages.AnalyzerContext<_>) ent = async {
       for v in vars do do! ctx.Analyze(v, ctx.Context)
       return Nothing
 
-  | Code("r", code, vars) ->
+  | EntityKind.Code("r", code, vars) ->
       let vars = vars |> List.choose (function { Kind = DataFrame(n, _); Value = Some(Frame v) } -> Some(n, v) | _ -> None)
       let! res = evalRCode (ent.Symbol.ToString()) vars code
       return res 
 
-  | DataFrame(v, rblock) ->
+  | EntityKind.DataFrame(v, rblock) ->
       do! ctx.Analyze(rblock, ctx.Context)
       match rblock.Value with
       | Some(Frames frames) -> return Frame(Map.find v frames)
@@ -50,6 +50,3 @@ let evalJs (ctx:Languages.AnalyzerContext<_>) ent = async {
 
   | _ -> 
       return failwithf "Not a JS entity: %A" ent }
-
-(*
-*)
