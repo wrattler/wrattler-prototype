@@ -71,7 +71,7 @@ let rec renderVirtual node =
       // Magic as per https://github.com/Matt-Esch/virtual-dom/blob/master/docs/hooks.md
       let Hook = box(fun () -> ())
       Hook?prototype?hook <- fun (node:HTMLElement) propertyName previousValue ->
-        if unbox node?dataset?renderedSymbol <> symbol then
+        //if unbox node?dataset?renderedSymbol <> symbol then
           waitForAdded 10 node
       let h = createNew Hook ()
 

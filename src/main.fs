@@ -155,7 +155,7 @@ let renderFrames (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity
               h?a [
                 "class" => (if v = selected then "nav-link active" else "nav-link")
                 "click" =!> fun _ _ -> ctx.Trigger(Rendering.DisplayVariable(v))
-                "href" => "#" ] [text v]
+                "href" => "javascript:;" ] [h?i ["class"=>"fa fa-table"; "style"=>"margin-right:10px"][]; text v]
             ]
           ]
           for v, data in vars do
@@ -329,6 +329,7 @@ open Wrattler.Html
 
 type State = 
   { BindingContext : BindingContext
+    BindingResult : BindingResult
     Nodes : Node<Block> list 
     States : obj list }
 
@@ -337,6 +338,7 @@ type Event =
   | StartEvaluation of bool
   | BlockEvent of id:string * obj
   | UpdateNodes of Node<Block> list * obj list
+  | UpdateBound of BindingResult
  
 let typeCheck state id code = async {
   try
@@ -360,6 +362,7 @@ let typeCheck state id code = async {
 let startEvaluation trigger state updateAsap evaluate = Async.StartImmediate <| async { 
   try
     let! bound, bindingResult = Binder.bind state.BindingContext state.Nodes
+    trigger (UpdateBound(bindingResult))
     if updateAsap then trigger (UpdateNodes(state.Nodes, state.States))
     do! startAnalyzer (createCheckingContext bindingResult) bound
     if updateAsap then trigger Refresh
@@ -378,6 +381,7 @@ let render trigger globalState =
       | Some ed ->          
           let ctx = 
             { new EditorContext<_> with
+                member x.Bound = globalState.BindingResult
                 member x.TypeCheck(id, code) = typeCheck globalState id code
                 member x.Trigger(evt) = trigger(BlockEvent(nd.Node.ID, evt))
                 member x.Refresh() = trigger Refresh }
@@ -419,10 +423,15 @@ let update trigger globalState evt =
   | UpdateNodes(newNodes, newStates) -> 
       Log.trace("gui", "Update nodes")
       { globalState with Nodes = newNodes; States = newStates }
+
+  | UpdateBound(bound) -> 
+      Log.trace("gui", "Update binding result")
+      { globalState with BindingResult = bound }
       
 let state =
   let nodes = parseMarkdown (Markdown.markdown.parse(demo))
-  { BindingContext = 
+  { BindingResult = BindingResult [||]
+    BindingContext = 
       Binder.createContext languages (fun bound ent -> async {
         do! startAnalyzer (createCheckingContext bound) ent
         do! startAnalyzer (createInterpreterContext ()) ent })

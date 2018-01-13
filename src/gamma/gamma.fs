@@ -187,37 +187,62 @@ open Wrattler.Html
 let callShow (o:obj) (id:string) : unit = failwith "JS"
 
 let renderGamma (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity =
+  
+  let (|EntityDisplay|_|) id ent = 
+    match ent with
+    | { Value = Some(CustomValue v); Type = Some(GammaType(Type.Object(FindMember "show" mem))) } -> 
+      h.delayed (id + "output") (text "Loading output...") (fun id -> 
+        Log.trace("gui", "Calling show on Gamma object..."); callShow v id) |> Some
+    | { Value = Some(Frame df) } -> Rendering.renderTable df ctx.Refresh |> Some
+    | _ -> None
+
   [ match entity with 
     | { Kind = EntityKind.CodeBlock(_, { Kind = GammaEntity(GammaEntityKind.Program cmds) }, _) } ->
+        
         let selected = state.SelectedVariable
+
         let listItems = cmds |> List.mapi (fun i cmd ->
           let label, display = 
             match cmd.Kind with 
-            | GammaEntity(GammaEntityKind.LetCommand({ Kind = GammaEntity(GammaEntityKind.Variable(v, _)) }, frame, value)) -> v, value
-            | GammaEntity(GammaEntityKind.RunCommand(value)) -> "run", value
+            | GammaEntity(GammaEntityKind.LetCommand({ Kind = GammaEntity(GammaEntityKind.Variable(v, _)) }, frame, value)) -> 
+                [h?i ["class"=>"fa fa-table"; "style"=>"margin-right:10px"][]; text v], (value, frame)
+            | GammaEntity(GammaEntityKind.RunCommand(value)) -> 
+                [h?i ["class"=>"fa fa-pie-chart"; "style"=>"margin-right:10px"][]; text "(output)"], (value, value)
             | _ -> failwith "renderGamma: Expected let or run command" 
-          let id = sprintf "%s-%d" label i
+          let id = string i
           id, label, if (selected = None && i = 0) || Some id = selected then Some display else None )
+
+        let currentCommand = 
+          ctx.Bound.Entities |> Seq.tryPick (fun (rng, ent) ->
+            if not (rng.Start <= state.Position && rng.End >= state.Position) then None else
+            match ent.Kind with
+            | GammaEntity(GammaEntityKind.LetCommand(_, frame, body)) -> Some(body, frame) 
+            | GammaEntity(GammaEntityKind.RunCommand(body)) -> Some(body, body)  
+            | _ -> None)
+
+        let listItems =
+          match currentCommand with
+          | Some(res) -> 
+              let preview = "-1", [h?i ["class"=>"fa fa-refresh"; "style"=>"margin-right:10px"][]; text "(current)"], Some(res)
+              preview :: [ for a, b, _ in listItems -> a, b, None ]
+          | _ -> listItems
+
         yield h?ul ["class" => "nav nav-pills"] [
           for id, label, display in listItems do
             yield h?li ["class" => "nav-item"] [
               h?a [
                 "class" => (if display.IsSome then "nav-link active" else "nav-link")
                 "click" =!> fun _ _ -> ctx.Trigger(Rendering.DisplayVariable(id))
-                "href" => "#" ] [text label]
+                "href" => "javascript:;" ] label
             ]
           ]
         yield h?div ["class"=>"thegamma"] [
           for id, _, display in listItems do
-            if display.IsSome then
-              Log.trace("gui", "Show entity %O", display.Value)
+            if display.IsSome then Log.trace("gui", "Show entity %O", display.Value)
             match display with
-            | Some { Value = Some(CustomValue v); Type = Some(GammaType(Type.Object(FindMember "show" mem))) } -> 
-                yield h.delayed (id + "output") (text "Loading output...") (fun id -> callShow v id)
-            | Some { Value = Some(CustomValue v); Type = Some(GammaType(Type.Object(:? FSharpProvider.GenericType as gt))) } 
-                  when gt.TypeDefinition.FullName.EndsWith("/series") -> 
-                yield h.delayed (id + "table") (text "Loading output...") (fun id -> TheGamma.table<obj,obj>.create(unbox v).show(id))
-            | Some { Value = None } -> 
+            | Some(EntityDisplay id show, _) | Some(_, EntityDisplay id show) -> 
+                yield show
+            | Some({ Value = None }, _) -> 
                 yield h?p [] [ text "Not evaluated yet..." ]
             | Some display -> 
                 yield h?p [] [ text (sprintf "Something else: %O" display) ]

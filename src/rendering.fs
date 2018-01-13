@@ -92,11 +92,13 @@ let createMonacoEditor id lang code =
 
 type CodeEditorState = 
   { Node : Node<Block>
+    Position : int
     SelectedVariable : string option }
 
 type CodeEditorEvent = 
   | DisplayVariable of string
   | UpdateCode of bool * string
+  | UpdatePosition of int
 
 let renderEditor renderEntity onCreated (ctx:EditorContext<_>) state lang src =
   [ h.custom 
@@ -110,8 +112,21 @@ let renderEditor renderEntity onCreated (ctx:EditorContext<_>) state lang src =
 
         let ed = createMonacoEditor (elid + "_editor") lang src 
         onCreated (ctx, state.Node.Node.ID, ed)
+
+        let mutable conv = LocationMapper(src)
+        let updatePosition () =
+          let position = ed.getPosition()
+          let loc = conv.LineColToAbsolute(int position.lineNumber, int position.column)
+          ctx.Trigger(UpdatePosition(loc)) 
+
+        ed.onDidBlurEditor(fun ce -> ctx.Trigger(UpdatePosition(-1)) ) |> ignore
+        ed.onDidFocusEditor(fun _ -> updatePosition ()) |> ignore
+        ed.onDidChangeCursorPosition(fun _ -> updatePosition ()) |> ignore
+
         ed.onDidChangeModelContent(fun me ->
-          ctx.Trigger(UpdateCode(false, ed.getModel().getValue(editor.EndOfLinePreference.LF, false)))  ) |> ignore
+          let source = ed.getModel().getValue(editor.EndOfLinePreference.LF, false)
+          conv <- LocationMapper(source)
+          ctx.Trigger(UpdateCode(false, source))  ) |> ignore
         ed.onKeyDown(fun ke -> 
           if ke.altKey && ke.keyCode = KeyCode.Enter then
             ctx.Trigger(UpdateCode(true, ed.getModel().getValue(editor.EndOfLinePreference.LF, false)))  ) |> ignore
@@ -134,13 +149,15 @@ let renderEditor renderEntity onCreated (ctx:EditorContext<_>) state lang src =
 
 let createStandardEditor renderEntity onCreated =
   { new Editor<CodeEditorEvent, CodeEditorState> with 
-      member x.Initialize(node) = { Node = node; SelectedVariable = None }
+      member x.Initialize(node) = { Node = node; SelectedVariable = None; Position = -1 }
       member x.Render(ctx, state) = 
         match state.Node.Node.BlockKind with
         | :? CodeBlock as cb -> renderEditor renderEntity onCreated ctx state cb.Language cb.Code
         | _ -> failwith "createStandardEditor: Wrong block kind"
       member x.Update(evt, state) = 
         match evt with 
+        | UpdatePosition(n) ->
+            { StartEvaluation = None; Node = state.Node; State = { state with Position = n } }
         | DisplayVariable n -> 
             { StartEvaluation = None; Node = state.Node; State = { state with SelectedVariable = Some n } }
         | UpdateCode(run, src) -> 

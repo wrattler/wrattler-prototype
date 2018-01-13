@@ -11,6 +11,7 @@ type EditorContext<'TEvent> =
   abstract Refresh : unit -> unit
   abstract Trigger : 'TEvent -> unit
   abstract TypeCheck : string * string -> Async<BindingResult>
+  abstract Bound : BindingResult
 
 and EditorState<'TState> = 
   { StartEvaluation : bool option
