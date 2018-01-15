@@ -65,7 +65,7 @@ module InteractiveHelpers =
         ( match opts.size with _, Some h -> h | _ -> max 400. (element.clientWidth / 2.) ) 
       do
         try
-          createVirtualDomApp outputId (initial data) (render data size) (fun _ -> update data) |> ignore
+          createVirtualDomApp outputId (initial data) (render data size) (fun _ st e -> Some (update data st e)) |> ignore
         with e ->
           Log.exn("GUI", "Interactive rendering failed: %O", e) } 
 

@@ -4,7 +4,7 @@ open Wrattler.Common
 // ------------------------------------------------------------------------------------------------
 
 type Range = 
-  { //Block : string
+  { Block : string
     Start : int
     End : int }
 

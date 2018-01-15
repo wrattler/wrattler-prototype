@@ -172,7 +172,7 @@ let rec parseExpressionOrNamedParam ctx =
           | Some expr -> Choice1Of2(whiteAfter white id, expr)
           | None -> 
               Errors.Parser.unexpectedTokenInArgList t.Range t.Token |> Context.error ctx
-              Choice1Of2(whiteAfter white id, node { Start = id.Range.End; End = id.Range.End } Expr.Empty)
+              Choice1Of2(whiteAfter white id, node { Block = id.Range.Block; Start = id.Range.End; End = id.Range.End } Expr.Empty)
       | _ -> Choice2Of2(parseExpression [] ctx)
   | _ -> 
       Choice2Of2(parseExpression [] ctx)
@@ -278,7 +278,7 @@ and parseIdentAfterDot body prevDotRng prevDotTok ctx =
   | None ->
       // RECOVERY: Nothing after dot - return body so far
       Errors.Parser.unexpectedScopeEndAfterDot prevDotRng prevDotTok |> Context.error ctx 
-      let emptyRng = { End = prevDotRng.End; Start = prevDotRng.End+1 }
+      let emptyRng = { Block = prevDotRng.Block; End = prevDotRng.End; Start = prevDotRng.End+1 }
       Expr.Member(body, node emptyRng (Expr.Variable(node emptyRng "")))
       |> node (unionRanges body.Range emptyRng)
 
@@ -286,7 +286,7 @@ and parseIdentAfterDot body prevDotRng prevDotTok ctx =
       // RECOVERY: Wrong token after dot - skip and try next
       Context.next ctx
       Errors.Parser.unexpectedTokenAfterDot t.Range t.Token |> Context.error ctx 
-      let emptyRng = { End = prevDotRng.End; Start = prevDotRng.End+1 }
+      let emptyRng = { Block = prevDotRng.Block; End = prevDotRng.End; Start = prevDotRng.End+1 }
       let body =
         Expr.Member(body, node emptyRng (Expr.Variable(node emptyRng "")))
         |> node (unionRanges body.Range emptyRng)
@@ -333,7 +333,7 @@ and parseFunction ctx funRng =
             | Some body -> body
             | _ -> 
                 Errors.Parser.missingBodyOfFunc (unionRanges funRng rngArr) |> Context.error ctx
-                node { Start = rngArr.End; End = rngArr.End } Expr.Empty
+                node { Block = rngArr.Block; Start = rngArr.End; End = rngArr.End } Expr.Empty
           let rng = unionRanges funRng body.Range
           node rng (Expr.Function(whiteAfter whiteAfterId id, body)) |> Some
 
@@ -347,20 +347,20 @@ and parseFunction ctx funRng =
           let body = 
             match parseExpression [] ctx with 
             | Some e -> e 
-            | _ -> node {Start=id.Range.End; End=id.Range.End} Expr.Empty
+            | _ -> node { Block = id.Range.Block; Start=id.Range.End; End=id.Range.End} Expr.Empty
           node (unionRanges funRng body.Range) 
             (Expr.Function(id, whiteBefore whiteAfterId body)) |> Some            
           
   // RECOVERY: Unexpected token or end of scope - return empty function
   | Some(white, t) ->
       Errors.Parser.unexpectedTokenAfterFun t.Range t.Token |> Context.error ctx
-      let rng = { Start = funRng.End; End = funRng.End }
+      let rng = { Block = funRng.Block; Start = funRng.End; End = funRng.End }
       node rng (Expr.Function(node rng "", node rng Expr.Empty)) 
       |> whiteBefore white |> Some
   
   | None ->
       Errors.Parser.unexpectedScopeEndInFunc funRng |> Context.error ctx
-      let rng = { Start = funRng.End; End = funRng.End }
+      let rng = { Block = funRng.Block; Start = funRng.End; End = funRng.End }
       node rng (Expr.Function(node rng "", node rng Expr.Empty)) |> Some
     
 
@@ -545,7 +545,7 @@ let parseLetBinding whiteBeforeLet rngLet ctx =
       | None ->
           // RECOVERY: End of block after ident - return binding with empty expression
           Errors.Parser.missingBodyInLetBinding id.Range |> Context.error ctx
-          let body = node { Start = id.Range.End; End = id.Range.End } Expr.Empty
+          let body = node { Block = id.Range.Block; Start = id.Range.End; End = id.Range.End } Expr.Empty
           Command.Let(id, body)
           |> node (unionRanges rngLet id.Range) 
           |> whiteBefore whiteBeforeLet
@@ -553,7 +553,7 @@ let parseLetBinding whiteBeforeLet rngLet ctx =
   | Some(whiteAfterLet, t) ->
       // RECOVERY: Unexpected token after let - try to parse body as expression & assume emtpy identifier
       Errors.Parser.unexpectedTokenInLetBinding t.Range t.Token |> Context.error ctx
-      let letEndRng = { Start = rngLet.End; End = rngLet.End }
+      let letEndRng = { Block = rngLet.Block; Start = rngLet.End; End = rngLet.End }
       let body = 
         match parseExpression [] ctx with 
         | Some e -> e
@@ -568,7 +568,7 @@ let parseLetBinding whiteBeforeLet rngLet ctx =
   | None ->
       // RECOVERY: Missing body - return let binding with empty expression and empty identifier
       Errors.Parser.missingBodyInLetBinding rngLet |> Context.error ctx
-      let rng = { Start = rngLet.End; End = rngLet.End }
+      let rng = { Block = rngLet.Block; Start = rngLet.End; End = rngLet.End }
       Command.Let(node rng "", node rng Expr.Empty)
       |> node rng |> whiteBefore whiteBeforeLet
 
@@ -615,19 +615,19 @@ let rec parseCommands acc ctx =
 // User friendly entry point
 // ------------------------------------------------------------------------------------------------
 
-let parseProgram (input:string) = 
+let parseProgram block (input:string) = 
   try
-    let tokens, errors = Tokenizer.tokenize input
+    let tokens, errors = Tokenizer.tokenize block input
     let ctx = 
       { Tokens = tokens; Position = 0; SilentMode = false
         Errors = ResizeArray<_>(); Whitespace = ResizeArray<_>() }
     let cmds = parseCommands [] ctx
     let errors = Array.append errors (ctx.Errors.ToArray())
-    let rng = cmds |> List.fold (fun rng cmd -> unionRanges rng cmd.Range) { Start = 0; End = 0 }
+    let rng = cmds |> List.fold (fun rng cmd -> unionRanges rng cmd.Range) { Block=block; Start = 0; End = 0 }
     { Body = node rng cmds }, errors
   with e ->
     Log.exn("parsing", "Exception while parsing program: %O", e)
-    let rng = { Start=0; End=0 }
+    let rng = { Block=block; Start=0; End=0 }
     let error = Errors.Parser.exceptionWhileParsing rng (e.ToString())
     { Body = node rng [] }, [| error |]
    

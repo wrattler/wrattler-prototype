@@ -20,7 +20,7 @@ open System.Collections.Generic
 type CheckingContext = 
   { Globals : IDictionary<string, Entity> 
     Ranges : IDictionary<Symbol, Range>
-    Evaluate : Entity -> Value option }
+    Evaluate : Entity -> Async<unit> }
 
 let addError (ctx:Languages.AnalyzerContext<_>) (ent:Entity) err = 
   ctx.GlobalContext.Errors.Add(err ctx.Context.Ranges.[ent.Symbol])
@@ -94,10 +94,12 @@ let checkMethodCallAsync (methodName:string) (ctx:Languages.AnalyzerContext<_>) 
 
   // Evalaute arguments of static parameters
   Log.trace("typechecker", "Evaluating arguments of type-level method '%s'", methodName)
-  for e in matchedArguments |> Seq.choose snd do e.Value <- ctx.Context.Evaluate e
+  for e in matchedArguments |> Seq.choose snd do do! ctx.Context.Evaluate e // Sets e.Value
   Log.trace("typechecker", "Evaluated arguments of '%s': %O", methodName, [| for e in Seq.choose snd matchedArguments -> e.Value |])
   
-  let tcargs = matchedArguments |> List.map (function (t, Some e) -> t, Some(e.Value.Value) | (t, _) -> t, None)
+  let tcargs = matchedArguments |> List.map (function 
+    | (t, Some e) -> t, Some(e.Value.Value) 
+    | (t, _) -> t, None)
   match resultTypeFunc tcargs with
   | Some typ -> return typ
   | None ->   

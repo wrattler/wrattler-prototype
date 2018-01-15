@@ -23,7 +23,8 @@ let escapeIdent s =
 
 /// Union ranges, assuming Start <= End for each of them
 let unionRanges r1 r2 =
-  { Start = min r1.Start r2.Start; End = max r1.End r2.End }
+  if r1.Block <> r2.Block then failwith "unionRanges: Cannot unify ranges with different blocks"
+  { Start = min r1.Start r2.Start; End = max r1.End r2.End; Block = r1.Block }
 
 /// Is the first range a strict sub-range of the second range
 let strictSubRange first second = 

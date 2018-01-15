@@ -22,28 +22,41 @@ let rec renderHtmlTree tree =
     h.el(unbox arr.[0]) props [ for i in contentIdx .. arr.Length-1 -> renderHtmlTree arr.[i] ]
   else failwithf "Unexpected node: %A" tree
 
-let renderTable url trigger = 
-  match Datastore.tryFetchPreview url trigger with 
-  | None ->
-      h?div ["class" => "preview"] [ h?p [] [text "Loading..."] ]
-  | Some objs ->
-      let first = Array.head objs
-      let props = JsHelpers.properties(first)
-      h?div ["class" => "preview"] [
-        h?table ["class" => "table"] [
-          h?thead [] [ 
-            h?tr [] [
-              for prop in props -> h?th [] [text prop.key]
-            ]
-          ]
-          h?tbody [] [
-            for obj in objs -> 
-              h?tr [] [
-                for prop in props -> h?td [] [ text(string (getProperty obj prop.key))  ]
-              ]
-          ]
+let renderObjectsTable objs = 
+  let first = Array.head objs
+  let props = JsHelpers.properties(first)
+  h?div ["class" => "preview"] [
+    h?table ["class" => "table"] [
+      h?thead [] [ 
+        h?tr [] [
+          for prop in props -> h?th [] [text prop.key]
         ]
       ]
+      h?tbody [] [
+        for obj in Seq.truncate 20 objs -> 
+          h?tr [] [
+            for prop in props -> h?td [] [ text(string (getProperty obj prop.key))  ]
+          ]
+      ]
+    ]
+  ]
+
+let renderTable url trigger = 
+  match Datastore.tryFetchPreview url trigger with 
+  | None -> h?div ["class" => "preview"] [ h?p [] [text "Loading..."] ]
+  | Some objs -> renderObjectsTable objs
+
+let mutable counter = 1
+let renderFutureTable (f:Future<_>) trigger = 
+  match f.Value with 
+  | Some table ->
+      renderObjectsTable (Array.map snd table)
+  | None -> 
+      counter <- counter + 1
+      h.delayed 
+        (sprintf "future-table-%d" counter)
+        (h?div ["class" => "preview"] [ h?p [] [text "Loading..."] ])
+        (fun id -> f.Then(fun table -> renderObjectsTable (Array.map snd table) |> Html.renderTo (Browser.document.getElementById(id))))
 
 let createMonacoEditor id lang code = 
   let services = JsInterop.createEmpty<editor.IEditorOverrideServices>
@@ -92,6 +105,7 @@ let createMonacoEditor id lang code =
 
 type CodeEditorState = 
   { Node : Node<Block>
+    Block : string
     Position : int
     SelectedVariable : string option }
 
@@ -149,7 +163,7 @@ let renderEditor renderEntity onCreated (ctx:EditorContext<_>) state lang src =
 
 let createStandardEditor renderEntity onCreated =
   { new Editor<CodeEditorEvent, CodeEditorState> with 
-      member x.Initialize(node) = { Node = node; SelectedVariable = None; Position = -1 }
+      member x.Initialize(node) = { Block = node.Node.ID; Node = node; SelectedVariable = None; Position = -1 }
       member x.Render(ctx, state) = 
         match state.Node.Node.BlockKind with
         | :? CodeBlock as cb -> renderEditor renderEntity onCreated ctx state cb.Language cb.Code

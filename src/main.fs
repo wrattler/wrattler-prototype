@@ -8,6 +8,9 @@ open Wrattler.Common
 open Fable.Core
 open Fable.Import
 
+open Wrattler.Languages
+open Wrattler.Ast.AstOps
+(*
 let demo = """
 # Sample data analysis
 
@@ -18,6 +21,27 @@ JavaScript blocks to do visualizations
 ### Testing The Gamma
 
 ```gamma
+let bb2014 = 
+  web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls")
+    .explore.'drop columns'.'drop Id'.'drop Distance band'.'drop Distance band used for weighting'
+    .'drop DNS failure (%)24-hour'.'drop DNS failure (%)8-10pm weekday'.'drop DNS resolution (ms)24-hour'
+    .'drop DNS resolution (ms)8-10pm weekday'.'drop Download speed (Mbit/s) 8-10pm weekday'.'drop Download speed (Mbit/s) Max'
+    .'drop Headline speed'.'drop ISP'.'drop isp weights'.'drop Jitter down (ms)24-hour'.'drop Jitter down (ms)8-10pm weekday'
+    .'drop Jitter up (ms)24-hour'.'drop Jitter up (ms)8-10pm weekday'.'drop Latency (ms)8-10pm weekday'.'drop LLU'
+    .'drop Market'.'drop nat weights'.'drop Packet loss (%)24-hour'.'drop Packet loss (%)8-10pm weekday'.'drop Technology'
+    .'drop Upload speed (Mbit/s)8-10pm weekday'.'drop Upload speed (Mbit/s)Max'.'drop Web page (ms)8-10pm weekday'
+    .then.'get the data'
+let bb2015 = 
+  web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls")
+    .explore.'get the data'
+```
+
+Yoi    
+
+```gamma
+datadiff.adapt(bb2015, bb2014)
+```
+
 let teams = 
   olympics
     .'group data'.'by Year'.'count distinct Team'.then
@@ -25,8 +49,7 @@ let teams =
     .'get series'.'with key Year'.'and value Team'
 compost.charts.line(teams)
   .setAxisX(minValue=1896, maxValue=2020)
-  .setTitle("Number of disticnt teams in Olympics")
-```
+  .setTitle("Number of disticnt teams in the Olympics")
 
 ### Analysing data using R
 
@@ -41,7 +64,6 @@ we define a frame `data` that we will access later.
 
 ```r
 data <- iris
-test <- teams
 ```
 
 Now that we have data, we can do some analysis. Note that the `data` frame is passed from 
@@ -77,14 +99,14 @@ addOutput(function(id) {
 Just to prove that this Markdown parser works, here is alos a link to the [Alan Turing
 Institute website](http://turing.ac.uk), which you'll, no doubt, find very interesting!
 """
+*)
 
 // ------------------------------------------------------------------------------------------------
 
-open Wrattler.Languages
-open Wrattler.Ast.AstOps
-
 let bindBuiltinCodeBlock ctx (cb:CodeBlock) = async {
-  let vars = Map.toList ctx.Frames |> List.map snd
+  let vars = 
+    [ for name, ent in Map.toList ctx.Frames do
+        if cb.Code.Contains(name) then yield ent ] // Guesswork - but only depend on in-scope variable that appear in code
   let codeEnt = bindEntity ctx cb.Language (Code(cb.Language, cb.Code, vars))
 
   Log.trace("binder", " -> Known variables: %s", String.concat "," (Seq.map fst (Map.toSeq ctx.Frames)))
@@ -96,7 +118,7 @@ let bindBuiltinCodeBlock ctx (cb:CodeBlock) = async {
     | _ -> ()
   let! vars = async {
     try
-      let! vars = getExports (codeEnt.Symbol.ToString()) frames codeEnt // TODO: This should not call R repeatedly
+      let! vars = getExports (codeEnt.Symbol.ToString()) frames codeEnt 
       Log.trace("binder", " -> Exporting variables: %s", String.concat "," vars)
       return vars
     with e -> 
@@ -171,7 +193,7 @@ let rlang =
       member x.Editor = Some(Rendering.createStandardEditor renderFrames ignore)
       member x.TypeChecker = None
       member x.Interpreter = Some(builtinInterprter Interpreter.evalR)
-      member x.Parse(code) = SimpleCodeBlock("r", code) :> _, [] }
+      member x.Parse(block, code) = SimpleCodeBlock("r", code) :> _, [] }
 
 let jslang = 
   { new LanguagePlugin<obj, obj, _, _> with
@@ -179,7 +201,7 @@ let jslang =
       member x.Editor = Some(Rendering.createStandardEditor renderJsEntity ignore)
       member x.Interpreter = Some(builtinInterprter Interpreter.evalJs)
       member x.TypeChecker = None
-      member x.Parse(code) = SimpleCodeBlock("javascript", code) :> _, [] }
+      member x.Parse(block, code) = SimpleCodeBlock("javascript", code) :> _, [] }
 
 (*
 
@@ -222,7 +244,7 @@ let mdlang =
             member x.Update(state, evt) = state } |> Some
       member x.TypeChecker = None
       member x.Interpreter = None
-      member x.Parse(code) = failwith "sys parser" }
+      member x.Parse(block, code) = failwith "sys parser" }
 
 let syslang = 
   { new LanguagePlugin<obj, obj, _, _> with
@@ -230,7 +252,7 @@ let syslang =
       member x.Editor = None
       member x.TypeChecker = None
       member x.Interpreter = None
-      member x.Parse(code) = failwith "sys parser" }
+      member x.Parse(block, code) = failwith "sys parser" }
 
 let languages : Map<string, LanguagePlugin<obj, obj, obj, obj>> = 
   [ "system", syslang
@@ -290,6 +312,7 @@ let (|MarkdownNode|_|) name (tree:obj) =
     else None
   else None  
 
+(*
 let blockId = 
   let mutable count = 0 
   fun () -> count <- count + 1; sprintf "block_%d" count
@@ -299,15 +322,17 @@ let parseMarkdown tree =
     match pars with 
     | MarkdownNode "para" [MarkdownNode "inlinecode" [body]]::rest ->
         if not (List.isEmpty acc) then
-          yield { Node = { ID = blockId(); BlockKind = { MarkdownBlock.Parsed = List.rev acc }; Errors = [] }; Entity = None; Range = { Start = 0; End = 0; } }
+          let id = blockId()
+          yield { Node = { ID = id; BlockKind = { MarkdownBlock.Parsed = List.rev acc }; Errors = [] }; Entity = None; Range = { Block = id; Start = 0; End = 0; } }
 
         let body = unbox<string> body
         let start = body.IndexOfAny [| '\r'; '\n' |]
         let lang, body = body.[0 .. start].Trim(), body.[start..].Trim() 
         match languages.TryFind(lang) with
         | Some lang ->
-            let block, errors = lang.Parse(body)
-            yield { Node = { ID = blockId(); BlockKind = block; Errors = errors }; Entity = None; Range = { Start = 0; End = body.Length } } 
+            let id = blockId()
+            let block, errors = lang.Parse(id, body)
+            yield { Node = { ID = id; BlockKind = block; Errors = errors }; Entity = None; Range = { Block = id; Start = 0; End = body.Length } } 
         | _ ->
             failwithf "Unsupported language '%s'" lang
 
@@ -316,12 +341,13 @@ let parseMarkdown tree =
         yield! loop (node::acc) rest
     | [] ->
         if not (List.isEmpty acc) then
-          yield { Node = { ID = blockId(); BlockKind = { MarkdownBlock.Parsed = List.rev acc }; Errors = [] }; Entity = None; Range = { Start = 0; End = 0 } } }
+          let id = blockId()
+          yield { Node = { ID = id; BlockKind = { MarkdownBlock.Parsed = List.rev acc }; Errors = [] }; Entity = None; Range = { Block = id; Start = 0; End = 0 } } }
 
   match tree with 
   | MarkdownNode "markdown" body -> List.ofSeq (loop [] body)
   | _ -> []
-
+*)
 
 // ------------------------------------------------------------------------------------------------
 
@@ -340,6 +366,15 @@ type Event =
   | UpdateNodes of Node<Block> list * obj list
   | UpdateBound of BindingResult
  
+let rec evalEntity bound ent = async {
+  do! startAnalyzer (createCheckingContext (makeTcContext bound)) ent
+  do! startAnalyzer (createInterpreterContext ()) ent  }
+
+and makeTcContext (bound:BindingResult) = 
+  { new TypeCheckingContext with 
+      member x.Bound = bound
+      member x.Evaluate e = evalEntity bound e }
+
 let typeCheck state id code = async {
   try
     let checkNodes = 
@@ -353,7 +388,8 @@ let typeCheck state id code = async {
               { Range = nd.Range; Entity = None; Node = { ID = id; Errors = errs; BlockKind = cb } } 
           | _ -> failwith "Expected code block")
     let! bound, bindingResult = Binder.bind state.BindingContext checkNodes
-    do! startAnalyzer (createCheckingContext bindingResult) bound
+    let ctx = makeTcContext bindingResult
+    do! startAnalyzer (createCheckingContext ctx) bound
     return bindingResult 
   with e ->
     Log.exn("main", "Failed: %O", e) 
@@ -364,7 +400,8 @@ let startEvaluation trigger state updateAsap evaluate = Async.StartImmediate <| 
     let! bound, bindingResult = Binder.bind state.BindingContext state.Nodes
     trigger (UpdateBound(bindingResult))
     if updateAsap then trigger (UpdateNodes(state.Nodes, state.States))
-    do! startAnalyzer (createCheckingContext bindingResult) bound
+    let ctx = makeTcContext bindingResult
+    do! startAnalyzer (createCheckingContext ctx) bound
     if updateAsap then trigger Refresh
     else trigger (UpdateNodes(state.Nodes, state.States))
     if evaluate then
@@ -392,12 +429,12 @@ let update trigger globalState evt =
   match evt with
   | Refresh -> 
       Log.trace("gui", "Refresh")
-      globalState
+      Some globalState
 
   | StartEvaluation run ->
       Log.trace("gui", "Start evaluation")
       startEvaluation trigger globalState true run
-      globalState
+      None 
 
   | BlockEvent(id, evt) ->
       Log.trace("gui", "Event in block %s", id)
@@ -415,32 +452,173 @@ let update trigger globalState evt =
       | Some run -> 
           let newState = { globalState with Nodes = newNodes; States = newStates }          
           startEvaluation trigger newState false run
-          // Return old nodes - evaluation will trigger update when needed
-          globalState
+          None
       | _ -> 
-          { globalState with Nodes = newNodes; States = newStates }
+          Some { globalState with Nodes = newNodes; States = newStates }
           
   | UpdateNodes(newNodes, newStates) -> 
       Log.trace("gui", "Update nodes")
-      { globalState with Nodes = newNodes; States = newStates }
+      Some { globalState with Nodes = newNodes; States = newStates }
 
   | UpdateBound(bound) -> 
       Log.trace("gui", "Update binding result")
-      { globalState with BindingResult = bound }
+      Some { globalState with BindingResult = bound }
       
+
+let node = 
+  let mutable counter = 0
+  fun () -> 
+    counter <- counter + 1
+    sprintf "block_%d" counter
+
+let markdown (src:string) = 
+  let id = node ()
+  let src = src.Split('\n') |> Array.map (fun l -> if l.Length >= 6 then l.Substring(6) else l) 
+  let src = String.concat "\n" (if src.[0].Trim() = "" then src.[1..] else src)
+  let nodes = match Markdown.markdown.parse(src) with MarkdownNode "markdown" body -> body | _ -> failwith "No nodes"
+  let block = { Parsed = nodes }
+  { Node = { ID = id; BlockKind = block; Errors = [] }; Entity = None; Range = { Block = id; Start = 0; End = 0; } }
+
+let code lang (src:string) = 
+  let id = node ()
+  let src = src.Split('\n') |> Array.map (fun l -> if l.Length >= 6 then l.Substring(6) else l) 
+  let src = String.concat "\n" (if src.[0].Trim() = "" then src.[1..] else src)
+  let block, errors = languages.[lang].Parse(id, src)
+  { Node = { ID = id; BlockKind = block; Errors = errors }; Entity = None; Range = { Block = id; Start = 0; End = 0; } }
+
+let demo = 
+  [ markdown """
+      # UK broadband data analysis
+      
+      We look at data on UK broadband [published by Ofcom](https://www.ofcom.org.uk/research-and-data/telecoms-research/broadband-research).
+      This analysis is fully transparent. We link directly to the government source. First, explore the data.
+
+      ### 1. Data exploration
+      
+      First, we use TheGamma to get the data and explore it interactively.
+
+      """
+    code "gamma" """
+      let data =
+        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls")
+          .explore.'group data'.'by Urban/rural'.'average Download speed (Mbit/s) 24 hrs'.then
+          .'filter data'.'Urban/rural is not'.''.then
+          .'get series'.'with key Urban/rural'.'and value Download speed (Mbit/s) 24 hrs'
+
+      compost.charts.bar(data)
+    """
+    markdown """
+      ###  2.  Data acquisition
+
+      Now, download data for years 2014 and 2015. We clean data for 2015 manually and select rows we want.
+    """
+    code "gamma" """
+      let bb2014 = 
+        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls")
+          .explore.'drop columns'.'drop Id'.'drop Distance band'.'drop Distance band used for weighting'
+          .'drop DNS failure (%)24-hour'.'drop DNS failure (%)8-10pm weekday'.'drop DNS resolution (ms)24-hour'
+          .'drop DNS resolution (ms)8-10pm weekday'.'drop Download speed (Mbit/s) 8-10pm weekday'.'drop Download speed (Mbit/s) Max'
+          .'drop Headline speed'.'drop ISP'.'drop isp weights'.'drop Jitter down (ms)24-hour'.'drop Jitter down (ms)8-10pm weekday'
+          .'drop Jitter up (ms)24-hour'.'drop Jitter up (ms)8-10pm weekday'.'drop Latency (ms)8-10pm weekday'.'drop LLU'
+          .'drop Market'.'drop nat weights'.'drop Packet loss (%)24-hour'.'drop Packet loss (%)8-10pm weekday'.'drop Technology'
+          .'drop Upload speed (Mbit/s)8-10pm weekday'.'drop Upload speed (Mbit/s)Max'.'drop Web page (ms)8-10pm weekday'
+          .then.'get the data'
+    
+      let bb2015 = 
+        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls")
+          .explore.'get the data'    
+    """ 
+    markdown """
+      ### 3. Automatic data cleaning
+      To clean data for 2015, we use the `datadiff` assistant, which helps us adapt corrupted or messy dataset to a
+      format of a clean dataset containing strucutrally same data.
+    """
+    code "gamma" """
+      let bb2015fix = 
+        datadiff.adapt(bb2015, bb2014).then.'Delete column WT_national'
+          .'Permute columns'.'Delete all recommended columns'.Result
+    """
+    markdown "
+      ### 4. Polyglot data analysis
+      So far, we did all the work in simple interactive TheGamma language. Now is time to do some real work! 
+      We will use R to do some analysis. Note that all data frames are automatically available.
+      "
+    code "r" """
+      colnames(bb2014) <- c("Urban","Down","Up","N1","N2")
+      colnames(bb2015fix) <- c("Urban","Down","Up","N1","N2")
+
+      training <- 
+        bb2014 %>%
+        mutate(Urban = ifelse(Urban=="Urban", 1, 0)) %>%
+        select(-c(N1,N2)) 
+
+      test <- bb2015fix %>%
+        mutate(Urban = ifelse(Urban=="Urban", 1, 0)) %>%
+        select(-c(N1,N2)) 
+
+      model <- glm(Urban ~.,family=binomial(link='logit'),data=training)
+      pred <- predict(model, test, type="response") %>% round
+      pred[is.na(pred)] <- 0.5
+
+      predicted <- data.frame(Urban=pred, ActualUrban=test$Urban)
+    """
+    markdown """
+      ### 5. Interactive data visualization
+      Thanks to the polyglot nature, we can mix TheGamma, R, JavaScript in one notebook.
+      To conclude, let's draw a simple chart using the Vega visualization library.
+      """
+    code "javascript" """
+      function sum(arr, col) { 
+        var res = 0;
+        for(var i = 0; i < arr.length; i++) res += arr[i][col];
+        return res;
+      }
+
+      var urban2014 = sum(training, "Urban");
+      var urban2015 = sum(test, "Urban");
+      var urbanGuess = sum(predicted, "Urban");
+
+      var agg = 
+        [ { "Type": "Urban", "Label": "2014 - Urban", "Count": urban2014 },
+          { "Type": "Rural", "Label": "2014 - Rural", "Count": training.length-urban2014 },
+          { "Type": "Urban", "Label": "2015 - Urban", "Count": urban2015 },
+          { "Type": "Rural", "Label": "2015 - Rural", "Count": test.length-urban2015 },
+          { "Type": "Urban", "Label": "Guess - Urban", "Count": urbanGuess },
+          { "Type": "Rural", "Label": "Guess - Rural", "Count": predicted.length-urbanGuess } ];
+
+      var spec = {
+        "$schema": "https://vega.github.io/schema/vega-lite/v2.0.json",
+        "width": 800,
+        "height": 400,
+        "data": { "values": agg },
+        "mark": "bar",
+        "encoding": {
+          "x": {"field": "Label", "type": "ordinal"},
+          "y": {"field": "Count", "type": "quantitative"},
+          "color": {"field": "Type", "type": "nominal"}
+        }
+      }
+      addOutput(function(id) { 
+        vega.embed("#" + id, spec, {actions:false});
+      });
+        """
+  ]
+
+let demo2 = 
+  if Browser.window.location.hash.Length > 1 then
+    demo |> List.truncate (int(Browser.window.location.hash.Substring(1)))
+  else demo
+
 let state =
-  let nodes = parseMarkdown (Markdown.markdown.parse(demo))
+  let nodes = demo2 //parseMarkdown (Markdown.markdown.parse(demo))
   { BindingResult = BindingResult [||]
-    BindingContext = 
-      Binder.createContext languages (fun bound ent -> async {
-        do! startAnalyzer (createCheckingContext bound) ent
-        do! startAnalyzer (createInterpreterContext ()) ent })
+    BindingContext = Binder.createContext languages evalEntity
     Nodes = nodes
     States = 
       [ for nd in nodes ->
           match languages.[nd.Node.BlockKind.Language].Editor with
           | None -> null
-          | Some ed -> ed.Initialize nd ] }
+          | Some ed -> ed.Initialize(nd) ] }
 
 let app = createVirtualDomApp "demo" state render update
 app.Trigger(StartEvaluation true)

@@ -33,14 +33,19 @@ let evalRCode hash (frames:seq<Name * string>) code = async {
   let! json = Http.Request("POST", rservice + "/eval", jsonStringify req)
   let vars = unbox<RFrame[]> (jsonParse json)
   return Frames(Map.ofList [ for v in vars -> v.name, v.url ]) }
+
+let exportsCache = System.Collections.Generic.Dictionary<string, _>() 
   
 let getExports hash (frames:seq<Name * string>) ent = async {
   match ent with 
   | { Kind = Code("r", code, _) } ->    
-      let req = { code = code; hash = hash; frames = [| for n, f in frames -> { name = n; url = f } |] }
-      let! json = Http.Request("POST", rservice + "/exports", jsonStringify req)
-      let vars = unbox<RExportsVar[]> (jsonParse json)
-      return [ for v in vars -> v.variable ]
+      let key = hash + code + String.concat "," [ for k,v in frames -> k + v]
+      if not (exportsCache.ContainsKey key) then
+        let req = { code = code; hash = hash; frames = [| for n, f in frames -> { name = n; url = f } |] }
+        let! json = Http.Request("POST", rservice + "/exports", jsonStringify req)
+        let vars = unbox<RExportsVar[]> (jsonParse json)
+        exportsCache.[key] <- [ for v in vars -> v.variable ]
+      return exportsCache.[key]
   | _ -> return [] }
 
 // ------------------------------------------------------------------------------------------------

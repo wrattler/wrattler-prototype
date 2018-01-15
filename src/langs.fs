@@ -38,11 +38,15 @@ and Analyzer<'TInput, 'TOutput, 'TContext> =
   abstract Analyze : Entity * AnalyzerContext<'TContext> -> Async<'TOutput>
 
 and LanguagePlugin<'TCheckingContext, 'TInterpreterContext, 'TEditorEvent, 'TEditorState> = 
-  abstract Parse : string -> BlockKind * Error list
+  abstract Parse : string * string -> BlockKind * Error list
   abstract Bind : BindingContext * BlockKind -> Async<Entity * list<string * Entity>>  
   abstract Interpreter : Analyzer<unit, Value, 'TInterpreterContext> option
-  abstract TypeChecker : Analyzer<BindingResult, Type, 'TCheckingContext> option
+  abstract TypeChecker : Analyzer<TypeCheckingContext, Type, 'TCheckingContext> option
   abstract Editor : Editor<'TEditorEvent, 'TEditorState> option
+
+and TypeCheckingContext =
+  abstract Bound : BindingResult 
+  abstract Evaluate : Entity -> Async<unit>
 
 /// As we bind, we keep root entity, current scope & variables in scope
 and BindingContext = 

@@ -10,7 +10,8 @@ open Wrattler.Gamma.Ast
 type Context = 
   { Tokens : ResizeArray<Token>
     Errors : ResizeArray<Error>
-    Input : string }
+    Input : string 
+    Block : string }
 
 /// Test whether 's' has 'prefix' at offset 'i'. The
 /// parameter 'j' is index inside prefix where we're starting.
@@ -31,7 +32,7 @@ let number c = c >= '0' && c <= '9'
 /// offset correctly & continue tokenizing
 let rec addAndTokenize ctx tok i l =
   { Token = tok
-    Range = { Start = i; End = i + l - 1 } } |> ctx.Tokens.Add 
+    Range = { Block = ctx.Block; Start = i; End = i + l - 1 } } |> ctx.Tokens.Add 
   tokenizeInput ctx (i + l)
 
 
@@ -64,7 +65,7 @@ and tokenizeString ctx acc start l =
 
 and tokenizeStringEnd error ctx acc start l =
   let str = acc |> List.toArray |> Array.rev |> System.String
-  let rng = { Start = start; End = start + l }
+  let rng = { Block = ctx.Block; Start = start; End = start + l }
   if error then ctx.Errors.Add(Errors.Tokenizer.inputEndInsideString rng str) 
   addAndTokenize ctx (TokenKind.String(str)) start l
 
@@ -80,7 +81,7 @@ and tokenizeQuotedIdent ctx start l =
     | c -> tokenizeQuotedIdent ctx start (l + 1)
 
 and tokenizeQuotedIdentEnd error ctx start l =
-  let rng = { Start = start; End = start + l }
+  let rng = { Block = ctx.Block; Start = start; End = start + l }
   let qid = ctx.Input.Substring(start + 1, l - if error then 1 else 2)
   let qid = if qid.EndsWith("\n") then qid.Substring(0, qid.Length-1) else qid
   if error then ctx.Errors.Add(Errors.Tokenizer.missingClosingQuote rng qid) 
@@ -160,17 +161,18 @@ and tokenizeInput ctx i =
   else 
 
   // Otherwise report an error & skip one character
-  ctx.Errors.Add(Errors.Tokenizer.unexpectedCharacter { Start = i; End = i } c)
+  ctx.Errors.Add(Errors.Tokenizer.unexpectedCharacter { Block = ctx.Block; Start = i; End = i } c)
   addAndTokenize ctx (TokenKind.Error c) i 1
 
 
 /// Tokenize the given input. Consumes all input characters and returns
 /// list of parsed tokens together with an array of tokenization errors.
-let tokenize input = 
+let tokenize block input = 
   let ctx = 
     { Errors = new ResizeArray<_>()
       Tokens = new ResizeArray<_>()
-      Input = input }
+      Input = input 
+      Block = block }
   let ctx = tokenizeInput ctx 0
-  ctx.Tokens.Add { Token = TokenKind.EndOfFile; Range = { Start = input.Length; End = input.Length } }
+  ctx.Tokens.Add { Token = TokenKind.EndOfFile; Range = { Block = ctx.Block; Start = input.Length; End = input.Length } }
   ctx.Tokens.ToArray(), ctx.Errors.ToArray()

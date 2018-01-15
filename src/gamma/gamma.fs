@@ -94,7 +94,9 @@ let globals = buildGlobalsTable (fun lookup -> async {
   let wb = 
     TypeProviders.RestProvider.provideRestType 
       lookup (resolveProvider lookup false) "worldbank" "https://thegamma-services.azurewebsites.net/worldbank" ""
-  
+  let dt = 
+    TypeProviders.RestProvider.provideRestType  
+      lookup (resolveProvider lookup false) "web" "https://gallery-csv-service.azurewebsites.net/providers/data" ""
   let! ol = 
     TypeProviders.Pivot.providePivotType 
       "http://thegamma-services.azurewebsites.net/pdata/olympics" false "olympics" lookup
@@ -102,30 +104,30 @@ let globals = buildGlobalsTable (fun lookup -> async {
   let dd = 
     TypeProviders.RestProvider.provideRestType 
       lookup (resolveProvider lookup false) "datadiff" "http://localhost:10037/datadiff" "" 
-  return js @ [ ol; wb; dd ] })
+  return js @ [ ol; wb; dd; dt ] })
 
 // ------------------------------------------------------------------------------------------------
 
-type GammaBlockKind(code, program:Program) = 
+type GammaBlockKind(block, code, program:Program) = 
   member x.Program = program
   interface BlockKind with 
     member x.Language = "gamma"
   interface CodeBlock with
     member x.Code = code
     member x.WithCode(newCode) = 
-      let newProgram, errors = Parser.parseProgram newCode
-      GammaBlockKind(newCode, newProgram) :> _, List.ofArray errors
+      let newProgram, errors = Parser.parseProgram block newCode
+      GammaBlockKind(block, newCode, newProgram) :> _, List.ofArray errors
 
 let gammaChecker = 
-  { new Analyzer<BindingResult, Wrattler.Ast.Type, _> with
-      member x.CreateContext(bound) = async {
-        let rangeLookup = dict [ for r, e in bound.Entities -> e.Symbol, r ]
+  { new Analyzer<TypeCheckingContext, Wrattler.Ast.Type, _> with
+      member x.CreateContext(ctx) = async {
+        let rangeLookup = dict [ for r, e in ctx.Bound.Entities -> e.Symbol, r ]
         let getName = function 
           | { Kind = GammaEntity(GammaEntityKind.GlobalValue(n, _)) } -> n
           | _ -> failwith "getName: Not gamma entity"
         let! globals = Async.AwaitFuture globals
         let globals = Map.ofList [ for e in globals -> getName e, e ]
-        return { Globals = globals; Ranges = rangeLookup; Evaluate = fun _ -> failwith "GammaEntity: evaluate" }}
+        return { Globals = globals; Ranges = rangeLookup; Evaluate = ctx.Evaluate }}
 
       member x.Analyze(ent, ctx) = async {
         match ent with 
@@ -188,13 +190,23 @@ let callShow (o:obj) (id:string) : unit = failwith "JS"
 
 let renderGamma (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity =
   
-  let (|EntityDisplay|_|) id ent = 
-    match ent with
-    | { Value = Some(CustomValue v); Type = Some(GammaType(Type.Object(FindMember "show" mem))) } -> 
-      h.delayed (id + "output") (text "Loading output...") (fun id -> 
-        Log.trace("gui", "Calling show on Gamma object..."); callShow v id) |> Some
-    | { Value = Some(Frame df) } -> Rendering.renderTable df ctx.Refresh |> Some
-    | _ -> None
+  let (|EntityDisplay|_|) id (ent:Entity) = 
+    let rec loop value typ =
+      match value, typ with
+      | Some(CustomValue v), Some(GammaType(Type.Object(FindMember "show" mem))) -> 
+        h.delayed (id + "output") (text "Loading output...") (fun id -> 
+          Log.trace("gui", "Calling show on Gamma object..."); callShow v id) |> Some
+      | Some(Frame df), _ -> 
+          Rendering.renderTable df ctx.Refresh |> Some
+      | Some(CustomValue s), Some(GammaType(Type.Object(:? Wrattler.Gamma.TypeProviders.FSharpProvider.GenericType as gt))) 
+          when gt.TypeDefinition.FullName.EndsWith("/series") -> 
+          let s = unbox<TheGamma.Series.series<_, _>>(s)
+          Some(Rendering.renderFutureTable s.data ctx.Refresh)
+      | Some(o), Some(GammaType(Type.Object(FindMember "preview" prev))) -> 
+          let newVal = Interpreter.evaluateExpr [o] (fun args -> prev.Emitter.Emit(List.head args))
+          loop (Some(CustomValue newVal)) (Some(prev.Type :> Wrattler.Ast.Type))
+      | _ -> None
+    loop ent.Value ent.Type
 
   [ match entity with 
     | { Kind = EntityKind.CodeBlock(_, { Kind = GammaEntity(GammaEntityKind.Program cmds) }, _) } ->
@@ -212,13 +224,15 @@ let renderGamma (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity 
           let id = string i
           id, label, if (selected = None && i = 0) || Some id = selected then Some display else None )
 
-        let currentCommand = 
-          ctx.Bound.Entities |> Seq.tryPick (fun (rng, ent) ->
-            if not (rng.Start <= state.Position && rng.End >= state.Position) then None else
+        let currentCommands = 
+          ctx.Bound.Entities |> Seq.choose (fun (rng, ent) ->
+            if rng.Block <> state.Block || state.Position < rng.Start || state.Position > rng.End then None else
             match ent.Kind with
             | GammaEntity(GammaEntityKind.LetCommand(_, frame, body)) -> Some(body, frame) 
             | GammaEntity(GammaEntityKind.RunCommand(body)) -> Some(body, body)  
             | _ -> None)
+        let currentCommand = 
+          currentCommands |> Seq.tryHead 
 
         let listItems =
           match currentCommand with
@@ -226,6 +240,9 @@ let renderGamma (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity 
               let preview = "-1", [h?i ["class"=>"fa fa-refresh"; "style"=>"margin-right:10px"][]; text "(current)"], Some(res)
               preview :: [ for a, b, _ in listItems -> a, b, None ]
           | _ -> listItems
+
+        Log.trace("gui", "Block: %s, Location: %s, Entities: %O", state.Block, state.Position, [| for rng, e in ctx.Bound.Entities -> rng.Block, rng.Start, rng.End, snd (Wrattler.Ast.AstOps.entityCodeAndAntecedents e.Kind) |])
+        Log.trace("gui", "Possible commands in block '%s' (%s): %O", state.Block, Seq.length currentCommands, Array.ofSeq currentCommands)
 
         yield h?ul ["class" => "nav nav-pills"] [
           for id, label, display in listItems do
@@ -236,11 +253,11 @@ let renderGamma (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity 
                 "href" => "javascript:;" ] label
             ]
           ]
-        yield h?div ["class"=>"thegamma"] [
+        yield h?div [] [
           for id, _, display in listItems do
             if display.IsSome then Log.trace("gui", "Show entity %O", display.Value)
             match display with
-            | Some(EntityDisplay id show, _) | Some(_, EntityDisplay id show) -> 
+            | Some(_, EntityDisplay id show) | Some(EntityDisplay id show, _) -> 
                 yield show
             | Some({ Value = None }, _) -> 
                 yield h?p [] [ text "Not evaluated yet..." ]
@@ -255,13 +272,16 @@ let language =
   Monaco.setupMonacoServices ()
   { new LanguagePlugin<_, _, _, _> with 
       member x.Interpreter = Some gammaInterpreter      
-      member x.TypeChecker = Some gammaChecker
+      member x.TypeChecker = Some gammaChecker 
       member x.Editor = 
         Wrattler.Rendering.createStandardEditor renderGamma (fun (ctx, id, ed) -> 
           let checker code = ctx.TypeCheck(id, code)
-          Monaco.configureMonacoEditor ed checker ) |> Some
+          Monaco.configureMonacoEditor ed id checker ) |> Some
 
       member x.Bind(ctx, block) = async {
+        let importedGlobals = 
+          [ for (KeyValue(k,v)) in ctx.Frames -> k, v]
+
         let! globals = Async.AwaitFuture globals
         let globalsNondelay = ResizeArray<_>()
         for g in globals do
@@ -272,9 +292,13 @@ let language =
                 g.Type <- Some (t :> _)
               globalsNondelay.Add(n, g)
               | _ -> () 
+
+        let allGlobals = 
+          importedGlobals @ (List.ofSeq globalsNondelay)
+
         match block with 
         | :? GammaBlockKind as block ->
-            let prog = Binder.bindProgram (Wrattler.Gamma.Binder.createContext ctx (List.ofSeq globalsNondelay)) block.Program 
+            let prog = Binder.bindProgram (Wrattler.Gamma.Binder.createContext ctx allGlobals) block.Program 
             let block = CodeBlock("gamma", prog, []) |> bindEntity ctx "gamma"
             match prog.Kind with
             | GammaEntity(GammaEntityKind.Program(cmds)) ->
@@ -287,6 +311,6 @@ let language =
             | _ -> return failwith "Gamma.LanguagePlugin.Bind: Expected Program entity"
         | _ -> return failwith "Gamma.LanguagePlugin.Bind: Expected GammaBlockKind" }
 
-      member x.Parse(code:string) = 
-        let program, errors = Parser.parseProgram code
-        GammaBlockKind(code, program) :> _, List.ofArray errors }
+      member x.Parse(block, code:string) = 
+        let program, errors = Parser.parseProgram block code
+        GammaBlockKind(block, code, program) :> _, List.ofArray errors }

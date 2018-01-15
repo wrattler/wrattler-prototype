@@ -187,6 +187,7 @@ type Http =
 
 type Future<'T> = 
   abstract Then : ('T -> unit) -> unit
+  abstract Value : option<'T>
 
 type Microsoft.FSharp.Control.Async with
   static member AwaitFuture (f:Future<'T>) = Async.FromContinuations(fun (cont, _, _) ->
@@ -218,6 +219,7 @@ type Microsoft.FSharp.Control.Async with
     if start = true then ensureStarted()
 
     { new Future<_> with
+        member x.Value = match res with Choice2Of3 v -> Some v | _ -> None
         member x.Then(f) = 
           ensureStarted()
           trigger f }

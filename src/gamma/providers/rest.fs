@@ -104,12 +104,17 @@ let dataCall parser trace endp =
       let tr = (propAccess trace).Emit(inst) 
       let mem = MemberExpression(tr, IdentifierExpression("getValue", None), false, None)
       CallExpression(mem, [StringLiteral(endp, None)], None) |> parser }
- 
 
+let frame = 
+  { new ObjectType with 
+      member x.Members = [||] 
+      member x.TypeEquals(f) = false }
+       
 // Turn "Async<string>" into the required type
 // I guess we should keep a flag whether the input is still async (or something)
 let rec getTypeAndEmitter (lookupNamed:string -> Type) ty = 
   match ty with
+  | Primitive("frame") -> Type.Object(frame), id
   | Primitive("string") -> Type.Primitive(PrimitiveType.String), id
   | Primitive("obj") -> Type.Primitive(PrimitiveType.String), id
   | Primitive("int") 
@@ -184,12 +189,20 @@ let rec createRestType lookupNamed resolveProvider root cookies url =
                   let ty, _ = getTypeAndEmitter lookupNamed ty
                   { MethodArgument.Name = p.name; Optional = p.optional; Type = ty; Static = p.kind = "static" } ] 
             
-            let retFunc tys = 
-              if not (AstOps.listsEqual (List.map fst tys) [ for ma in args -> ma.Type ] AstOps.typesEqual) then None else
-              let matched = Seq.zip parameters tys
+            let retFunc tys =
+              let typesOk = AstOps.listsEqual (List.map fst tys) [ for ma in args -> ma.Type ] (fun t1 t2 ->
+                match t2 with Type.Object(f) when f = frame -> true | _ -> AstOps.typesEqual t1 t2) 
+              if not typesOk then None else
+              let matched = Seq.zip3 parameters args tys 
               let newCookies = 
                 matched |> Seq.choose (function
-                  | pa, (_, Some value) when pa.kind = "static" -> Some(pa.cookie.Value + "=" + Fable.Import.JS.encodeURIComponent(string value))
+                  | pa, { Static = true; Type = Type.Object(f) }, (_, Some (Frame url)) when f = frame ->
+                      Some(pa.cookie.Value + "=" + Fable.Import.JS.encodeURIComponent(string url))
+                  | pa, { Static = true; Type = Type.Object(f) }, (_, Some (Frame url)) when f = frame ->
+                      Log.exn("typechecker", "FRAME FRAME FRAME!")
+                      failwith "FRAME"
+                  | pa, { Static = true }, (_, Some (CustomValue value)) -> Some(pa.cookie.Value + "=" + Fable.Import.JS.encodeURIComponent(string value))
+                  | _, { Static = true}, (_, Some _) -> failwith "createRestType.retFunc: Not a custom value!"
                   | _ -> None) 
               let cookies = Seq.append [cookies] newCookies |> String.concat "&"
               createReturnType cookies

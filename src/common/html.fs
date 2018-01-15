@@ -71,7 +71,7 @@ let rec renderVirtual node =
       // Magic as per https://github.com/Matt-Esch/virtual-dom/blob/master/docs/hooks.md
       let Hook = box(fun () -> ())
       Hook?prototype?hook <- fun (node:HTMLElement) propertyName previousValue ->
-        //if unbox node?dataset?renderedSymbol <> symbol then
+        if unbox node?dataset?renderedSymbol <> symbol then
           waitForAdded 10 node
       let h = createNew Hook ()
 
@@ -139,7 +139,7 @@ let patchLists oldList newList =
     | [], [] -> List.rev acc
   loop [] oldList newList
 
-let createVirtualDomApp id initial r u = 
+let createVirtualDomApp id initial r update = 
   let event = new Event<'T>()
   let trigger e = event.Trigger(e)  
   let mutable blocks = []
@@ -148,7 +148,12 @@ let createVirtualDomApp id initial r u =
   container.innerHTML <- ""
 
   let handleEvent evt = 
-    state <- match evt with Some e -> u trigger state e | _ -> state
+    match evt with 
+    | Some e -> 
+        match update trigger state e with
+        | Some newState -> state <- newState
+        | _ -> ()
+    | _ -> ()
     let newTree = r trigger state 
     let newBlocks = match newTree with Stable list -> list | dom -> ["it", dom]
     let mutable lastBlock = None

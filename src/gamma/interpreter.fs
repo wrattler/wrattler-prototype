@@ -51,10 +51,13 @@ let evaluateExpression (_stored:obj[]) (expr:Expression) : obj =
     let series = 
       Fable.Core.JsInterop.createObj [
         "create", box (fun a b c d -> TheGamma.Series.series<_, _>.create(a, b, c, d))
-        (*"ordinal", box TheGamma.Series.series<_, _>.ordinal
-        "values", box TheGamma.Series.series<_, _>.values *) ]
+        "ordinal", box (fun a b c d -> TheGamma.Series.series<_, _>.ordinal(a, b, c, d))
+        "values", box (fun a -> TheGamma.Series.series<_, _>.values(a)) ]
     let PivotContext a b = TypeProvidersRuntime.PivotContext(a, b)
-    
+    let RuntimeContext a b c = TypeProvidersRuntime.RuntimeContext(a, b, c)
+    let convertTupleSequence f g data = TypeProvidersRuntime.convertTupleSequence f g data
+    let convertSequence f data = TypeProvidersRuntime.convertSequence f data
+
     // HACK (2/2) The name `_stored` may appear in the generated code!
     _stored.Length |> ignore
     eval(code.code)

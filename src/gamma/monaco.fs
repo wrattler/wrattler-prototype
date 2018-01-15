@@ -32,7 +32,7 @@ let tokensProvider =
         tokens.endState <- noState
         tokens.tokens <- ResizeArray()
 
-        let tokenized, _ = Tokenizer.tokenize line
+        let tokenized, _ = Tokenizer.tokenize "na" line
         for t in tokenized do
           let tok = JsInterop.createEmpty<languages.IToken>
           tok.startIndex <- float t.Range.Start
@@ -42,24 +42,24 @@ let tokensProvider =
         tokens
       member this.getInitialState() = noState }
 
-let createCompletionProvider (typeCheck:string -> string -> Async<BindingResult>) = 
+let createCompletionProvider (getService:string -> string * (string -> Async<BindingResult>)) = 
   { new languages.CompletionItemProvider with 
       member this.triggerCharacters = Some(ResizeArray [| for i in 0 .. 255 -> string (char i) |])
       member this.provideCompletionItems(model, position, token) =           
         async {      
           try    
-
+            let block, typeCheck = getService (model.uri.toString())
             let input = model.getValue(editor.EndOfLinePreference.LF, false)
             
             let conv = LocationMapper(input)
             let loc = conv.LineColToAbsolute(int position.lineNumber, int position.column)
             
-            let! ents = typeCheck (model.uri.toString()) input
+            let! ents = typeCheck  input
             let optMembers = 
               ents.Entities |> Seq.tryPick (fun (rng, ent) ->
                 match ent with 
                 | { Kind = GammaEntity(GammaEntityKind.Member({ Type = Some t }, { Kind = GammaEntity(GammaEntityKind.MemberName(n)) })) } 
-                      when loc >= rng.Start && loc <= rng.End + 1 -> 
+                      when loc >= rng.Start && loc <= rng.End + 1 && rng.Block = block -> 
                     Log.trace("completions", "Antecedant at current location (member '%s'): %O", n, t)
                     match t with
                     | GammaType(Type.Object obj) -> Some(n, rng, obj.Members)
@@ -130,7 +130,7 @@ let createCompletionProvider (typeCheck:string -> string -> Async<BindingResult>
 
       member this.resolveCompletionItem(item, token) = Fable.Core.U2.Case1 item }
 
-let createdEditors = System.Collections.Generic.Dictionary<string, string -> Async<BindingResult>>()
+let createdEditors = System.Collections.Generic.Dictionary<string, string * (string -> Async<BindingResult>)>()
 let getService uri = createdEditors.[uri]
 
 let setupMonacoServices () = 
@@ -140,5 +140,5 @@ let setupMonacoServices () =
   languages.Globals.setTokensProvider("gamma", tokensProvider) |> ignore
   languages.Globals.registerCompletionItemProvider("gamma", createCompletionProvider getService) |> ignore
 
-let configureMonacoEditor (ed:editor.ICodeEditor) checker = 
-  createdEditors.Add(ed.getModel().uri.toString(), checker)
+let configureMonacoEditor (ed:editor.ICodeEditor) block checker = 
+  createdEditors.Add(ed.getModel().uri.toString(), (block, checker))
