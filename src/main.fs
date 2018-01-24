@@ -487,6 +487,47 @@ let code lang (src:string) =
   { Node = { ID = id; BlockKind = block; Errors = errors }; Entity = None; Range = { Block = id; Start = 0; End = 0; } }
 
 let demo = 
+(*  [ markdown """
+      # Testing things!!
+    """
+    code "gamma" """
+      let bb2014 = 
+        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls")
+          .explore.'drop columns'.'drop Id'.'drop Distance band'.'drop Distance band used for weighting'
+          .'drop DNS failure (%)24-hour'.'drop DNS failure (%)8-10pm weekday'.'drop DNS resolution (ms)24-hour'
+          .'drop DNS resolution (ms)8-10pm weekday'.'drop Download speed (Mbit/s) 8-10pm weekday'.'drop Download speed (Mbit/s) Max'
+          .'drop Headline speed'.'drop ISP'.'drop isp weights'.'drop Jitter down (ms)24-hour'.'drop Jitter down (ms)8-10pm weekday'
+          .'drop Jitter up (ms)24-hour'.'drop Jitter up (ms)8-10pm weekday'.'drop Latency (ms)8-10pm weekday'.'drop LLU'
+          .'drop Market'.'drop nat weights'.'drop Packet loss (%)24-hour'.'drop Packet loss (%)8-10pm weekday'.'drop Technology'
+          .'drop Upload speed (Mbit/s)8-10pm weekday'.'drop Upload speed (Mbit/s)Max'.'drop Web page (ms)8-10pm weekday'
+          .then.'get the data'
+    
+      let bb2015nice = 
+        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls")
+          .explore.'drop columns'.'drop Disconnections'.'drop Dist_ADSL1'.'drop Dist_ADSL2'.'drop DL24hrmax'
+          .'drop DLpeakmax'.'drop DLpeakmean'.'drop DNSFail24hr'.'drop DNSFailPeak'.'drop DNSRTTPeak'.'drop iPlayerFailed24hr'
+          .'drop iPlayerFailedPeak'.'drop iPlayerHD24hr'.'drop iPlayerHDPeak'.'drop iPlayerSD24hr'.'drop iPlayerSDPeak'
+          .'drop iPlayerStartupDelayPeak'.'drop iPlayerUHD24hr'.'drop iPlayerUHDPeak'.'drop JitterDown24hr'
+          .'drop JitterDownPeak'.'drop JitterUp24hr'.'drop JitterUpPeak'.'drop LatencyPeak'.'drop Nation'
+          .'drop NetflixFailed24hr'.'drop NetflixFailedPeak'.'drop NetflixHD24hr'.'drop NetflixHDPeak'
+          .'drop NetflixSD24hr'.'drop NetflixSDPeak'.'drop NetflixStartupDelay24hr'.'drop NetflixStartupDelayPeak'
+          .'drop NetflixUHD24hr'.'drop NetflixUHDPeak'.'drop Pack_number'.'drop PacketLoss24hr'.'drop PacketLossPeak'
+          .'drop Plusnet_upload'.'drop Tech'.'drop UL24hrmax'.'drop UL24hrmax_A'.'drop UL24hrmean_A'.'drop unit_id'
+          .'drop Valid_panel'.'drop WebPeak'.'drop WT_ISP'.'drop WT_national'.'drop YouTubeFailed24hr'
+          .'drop YouTubeFailedPeak'.'drop YouTubeHD24hr'.'drop YouTubeHDPeak'.'drop YouTubeSD24hr'.'drop YouTubeSDPeak'
+          .'drop YouTubeStartupDelay24hr'.'drop YouTubeStartupDelayPeak'.'drop YouTubeUHD24hr'.'drop YouTubeUHDPeak'
+          .then.'get the data'
+
+      let bb2015 = 
+        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls")
+          .explore.'get the data' """ 
+    code "gamma" """
+      let bb2015fix = 
+        datadiff.adapt(bb2015, bb2014).then.'Delete column WT_national'
+          .'Permute columns'.'Delete all recommended columns'.Result
+    """
+  ]
+*) //(*
   [ markdown """
       # UK broadband data analysis
       
@@ -536,7 +577,7 @@ let demo =
     code "gamma" """
       let bb2015fix = 
         datadiff.adapt(bb2015, bb2014).then.'Delete column WT_national'
-          .'Permute columns'.'Delete all recommended columns'.Result
+          .'Delete all recommended columns'.Result
     """
     markdown "
       ### 4. Polyglot data analysis
@@ -544,17 +585,14 @@ let demo =
       We will use R to do some analysis. Note that all data frames are automatically available.
       "
     code "r" """
-      colnames(bb2014) <- c("Urban","Down","Up","N1","N2")
-      colnames(bb2015fix) <- c("Urban","Down","Up","N1","N2")
+      colnames(bb2014) <- c("Urban","Down","Up","Latency","Web")
+      colnames(bb2015fix) <- c("Urban","Down","Up","Latency","Web")
 
       training <- 
-        bb2014 %>%
-        mutate(Urban = ifelse(Urban=="Urban", 1, 0)) %>%
-        select(-c(N1,N2)) 
+        bb2014 %>% mutate(Urban = ifelse(Urban=="Urban", 1, 0))
 
-      test <- bb2015fix %>%
-        mutate(Urban = ifelse(Urban=="Urban", 1, 0)) %>%
-        select(-c(N1,N2)) 
+      test <- 
+        bb2015fix %>% mutate(Urban = ifelse(Urban=="Urban", 1, 0)) 
 
       model <- glm(Urban ~.,family=binomial(link='logit'),data=training)
       pred <- predict(model, test, type="response") %>% round
@@ -603,6 +641,7 @@ let demo =
       });
         """
   ]
+//*)
 
 let demo2 = 
   if Browser.window.location.hash.Length > 1 then
