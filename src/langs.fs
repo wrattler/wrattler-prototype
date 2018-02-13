@@ -54,8 +54,7 @@ and BindingContext =
     Languages : Map<string, LanguagePlugin<obj, obj, obj, obj>>
     Frames : Map<Name, Entity>  
     Root : Entity    
-    Evaluate : BindingResult -> Entity -> Async<unit>
-
+    
     /// Table with previously created entities. This is a mutable mapping from 
     /// list of symbols (antecedent entities) together with entity kind & name
     /// to the actual entity. Antecedents capture dependencies (if dependency 

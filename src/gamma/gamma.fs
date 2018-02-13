@@ -299,7 +299,6 @@ let language =
         match block with 
         | :? GammaBlockKind as block ->
             let prog = Binder.bindProgram (Wrattler.Gamma.Binder.createContext ctx allGlobals) block.Program 
-            let block = CodeBlock("gamma", prog, []) |> bindEntity ctx "gamma"
             match prog.Kind with
             | GammaEntity(GammaEntityKind.Program(cmds)) ->
                 let exports = 
@@ -307,6 +306,7 @@ let language =
                     | { Kind = GammaEntity(GammaEntityKind.LetCommand({ Kind = GammaEntity(GammaEntityKind.Variable(v, _)) }, frame, value)) } ->
                       Some(v, frame)
                     | _ -> None)
+                let block = CodeBlock("gamma", prog, List.map snd exports) |> bindEntity ctx "gamma"
                 return block, exports
             | _ -> return failwith "Gamma.LanguagePlugin.Bind: Expected Program entity"
         | _ -> return failwith "Gamma.LanguagePlugin.Bind: Expected GammaBlockKind" }

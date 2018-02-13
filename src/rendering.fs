@@ -10,6 +10,18 @@ open Fable.Core
 
 // ------------------------------------------------------------------------------------------------
 
+let rec formatHtmlTree tree : string =
+  if isString tree then unbox tree
+  elif isArray tree then
+    let arr = unbox<obj[]> tree
+    let contentIdx, props = 
+      if isObject arr.[1] then 
+        let props = JsHelpers.properties(arr.[1])
+        2, String.concat " " [for p in props -> sprintf "%s=%s" p.key (unbox p.value) ]
+      else 1, ""
+    sprintf "<%s%s>%s</%s>" (unbox arr.[0]) props (String.concat "" [ for i in contentIdx .. arr.Length-1 -> formatHtmlTree arr.[i] ]) (unbox arr.[0])
+  else failwithf "Unexpected node: %A" tree
+
 let rec renderHtmlTree tree =
   if isString tree then text(unbox tree)
   elif isArray tree then

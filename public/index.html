@@ -14,8 +14,26 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vega/3.0.2/vega.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vega-lite/2.0.0-rc3/vega-lite.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vega-embed/3.0.0-beta.20/vega-embed.js"></script>
+  
+  <script src="http://visjs.org/dist/vis.js"></script>  
+  <link href="http://visjs.org/dist/vis-network.min.css" rel="stylesheet" type="text/css" />
 
   <style type="text/css">
+    #wrattlergraph {
+      width: 100vw;
+      height: 100vh;
+      position:sticky;
+      left:0px;
+      top:0px;
+      z-index:1000;
+      background:white;
+      display:none;
+    }
+    #wrattlergraph-output {
+      width: 100vw;
+      height: 100vh;
+    }
+
     .block-markdown {
       padding:10px;
     }
@@ -88,10 +106,12 @@
   
 </head>
 <body>
-  <div id="test"></div>
+  <div id="wrattlergraph">
+    <button onclick="document.getElementById('wrattlergraph').style.display = 'none';">Hide</button>
+    <div id="wrattlergraph-output"></div>
+  </div>
   <div class="container"><div class="row"><div class="col-sm-12">
     <div id="demo"></div>
-    <div id="ed"></div>
   </div></div></div>
 
 <!--   

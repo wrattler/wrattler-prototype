@@ -155,6 +155,9 @@
     <Compile Include="../src/gamma/gamma.fs">
       <Link>gamma/gamma.fs</Link>
     </Compile>
+    <Compile Include="../src/debug.fs">
+      <Link>debug.fs</Link>
+    </Compile>
     <Compile Include="../src/main.fs">
       <Link>main.fs</Link>
     </Compile>

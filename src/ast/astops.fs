@@ -14,8 +14,8 @@ let formatEntityKind = function
 /// Return entity name (or anonymous) and all its antecedants
 let rec entityCodeAndAntecedents = function
   | EntityKind.Root -> [], ""
-  | EntityKind.Code(lang, code, frames) -> frames, sprintf "<code lang='%s'>%s</code>" lang code
-  | EntityKind.CodeBlock(lang, code, vars) -> code::vars, sprintf "<codeblock lang='%s'/>" lang
+  | EntityKind.Code(lang, code, imports) -> imports, sprintf "<code lang='%s'>%s</code>" lang code
+  | EntityKind.CodeBlock(lang, code, exports) -> code::exports, sprintf "<codeblock lang='%s'/>" lang
   | EntityKind.DataFrame(var, block) -> [block], sprintf "<var name='%s'/>" var
   | EntityKind.Notebook(blocks) -> blocks, "<notebook/>"
   | EntityKind.CustomEntity ent -> ent.GetCodeAndAntecedents()

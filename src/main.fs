@@ -103,32 +103,33 @@ Institute website](http://turing.ac.uk), which you'll, no doubt, find very inter
 
 // ------------------------------------------------------------------------------------------------
 
-let bindBuiltinCodeBlock ctx (cb:CodeBlock) = async {
-  let vars = 
-    [ for name, ent in Map.toList ctx.Frames do
-        if cb.Code.Contains(name) then yield ent ] // Guesswork - but only depend on in-scope variable that appear in code
-  let codeEnt = bindEntity ctx cb.Language (Code(cb.Language, cb.Code, vars))
-
-  Log.trace("binder", " -> Known variables: %s", String.concat "," (Seq.map fst (Map.toSeq ctx.Frames)))
-  let frames = ResizeArray<_>()
-  for v, f in Map.toSeq ctx.Frames do
-    do! ctx.Evaluate (BindingResult(ctx.Bound.ToArray())) f
-    match f.Value with 
-    | Some(Frame data) -> frames.Add(v, data)
-    | _ -> ()
-  let! vars = async {
-    try
-      let! vars = getExports (codeEnt.Symbol.ToString()) frames codeEnt 
-      Log.trace("binder", " -> Exporting variables: %s", String.concat "," vars)
-      return vars
+let bindRCodeBlock ctx (cb:CodeBlock) = async {
+  Log.trace("binder", "Known variables (r): %s", String.concat "," (Seq.map fst (Map.toSeq ctx.Frames)))
+  let frames = ctx.Frames |> Seq.map (fun (KeyValue(k, _)) -> k) 
+  let! imports, exports = async {
+    try return! getExports cb.Code (getHashCode cb.Code) frames 
     with e -> 
       Log.error("binder", "Getting R exports failed: %s", e)
-      return [] }
+      return [], [] }
 
-  let vars = vars |> List.map (fun v -> v, bindEntity ctx cb.Language (DataFrame(v, codeEnt)))
-  //let frames = vars |> List.fold (fun frames (v, ent) -> Map.add v ent frames) ctx.Frames
-  let blockEnt = bindEntity ctx cb.Language (EntityKind.CodeBlock(cb.Language, codeEnt, List.map snd vars)) 
-  return blockEnt, vars }
+  let importVars = ctx.Frames |> Seq.choose (fun (KeyValue(k, v)) ->
+    if Seq.exists ((=) k) imports then Some(k, v) else None) |> List.ofSeq
+  let codeEnt = bindEntity ctx cb.Language (Code(cb.Language, cb.Code, List.map snd importVars))
+  let exportVars = exports |> List.map (fun v -> v, bindEntity ctx cb.Language (DataFrame(v, codeEnt)))
+  Log.trace("binder", "Importing variables (r): %s", String.concat "," (List.map fst importVars))
+  Log.trace("binder", "Exporting variables (r): %s", String.concat "," (List.map fst exportVars))
+
+  let blockEnt = bindEntity ctx cb.Language (EntityKind.CodeBlock(cb.Language, codeEnt, List.map snd exportVars)) 
+  return blockEnt, exportVars }
+
+let bindJsCodeBlock ctx (cb:CodeBlock) = async {
+  // Guesswork - but only depend on in-scope variable that appear in code
+  Log.trace("binder", "Known variables (js): %s", String.concat "," (Seq.map fst (Map.toSeq ctx.Frames)))
+  let vars = ctx.Frames |> Seq.choose (fun (KeyValue(name, ent)) -> if cb.Code.Contains name then Some(name, ent) else None)
+  Log.trace("binder", "Importing variables (js): %s", String.concat "," (Seq.map fst vars))
+  let codeEnt = bindEntity ctx cb.Language (Code(cb.Language, cb.Code, List.ofSeq (Seq.map snd vars)))  
+  let blockEnt = bindEntity ctx cb.Language (EntityKind.CodeBlock(cb.Language, codeEnt, [])) 
+  return blockEnt, [] }
 
 let recursiveAnalyzer result = 
   { new Analyzer<_, _, _> with 
@@ -189,7 +190,7 @@ let renderFrames (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity
 
 let rlang = 
   { new LanguagePlugin<obj, obj, _, _> with
-      member x.Bind(ctx, nd) = bindBuiltinCodeBlock ctx (nd :?> CodeBlock)
+      member x.Bind(ctx, nd) = bindRCodeBlock ctx (nd :?> CodeBlock)
       member x.Editor = Some(Rendering.createStandardEditor renderFrames ignore)
       member x.TypeChecker = None
       member x.Interpreter = Some(builtinInterprter Interpreter.evalR)
@@ -197,7 +198,7 @@ let rlang =
 
 let jslang = 
   { new LanguagePlugin<obj, obj, _, _> with
-      member x.Bind(ctx, nd) = bindBuiltinCodeBlock ctx (nd :?> CodeBlock)
+      member x.Bind(ctx, nd) = bindJsCodeBlock ctx (nd :?> CodeBlock)
       member x.Editor = Some(Rendering.createStandardEditor renderJsEntity ignore)
       member x.Interpreter = Some(builtinInterprter Interpreter.evalJs)
       member x.TypeChecker = None
@@ -219,14 +220,19 @@ open Wrattler.Html
 
 let mdlang = 
   { new LanguagePlugin<obj, obj, _, _> with
-      member x.Bind(ctx, _) = 
-        let ck = 
-          { new CustomEntityKind with 
-              member x.Language = "gamma"
-              member x.FormatEntity() = "markdown"
-              member x.GetCodeAndAntecedents() = [], "<markdown code='??' />" } // TODO
-        let ent = bindEntity ctx "markdown" (EntityKind.CustomEntity(ck))
-        async.Return(ent, [])
+      member x.Bind(ctx, block) = 
+        match block with 
+        | :? MarkdownBlock as mb -> 
+            let tree = Markdown.markdown.toHTMLTree(Array.ofList(box "markdown"::mb.Parsed)) |> unbox<obj[]>
+            let html = Rendering.formatHtmlTree tree
+            let ck = 
+              { new CustomEntityKind with 
+                  member x.Language = "gamma"
+                  member x.FormatEntity() = "markdown"
+                  member x.GetCodeAndAntecedents() = [], sprintf "<markdown code='%s' />" html }
+            let ent = bindEntity ctx "markdown" (EntityKind.CustomEntity(ck))
+            async.Return(ent, [])
+        | _ -> failwith "mdlang: Unexpected node"
 
       member x.Editor = 
         { new Editor<_, _> with
@@ -392,7 +398,7 @@ let typeCheck state id code = async {
     do! startAnalyzer (createCheckingContext ctx) bound
     return bindingResult 
   with e ->
-    Log.exn("main", "Failed: %O", e) 
+    Log.exn("main", "Type checker failed: %O", e) 
     return raise e }
 
 let startEvaluation trigger state updateAsap evaluate = Async.StartImmediate <| async { 
@@ -408,7 +414,7 @@ let startEvaluation trigger state updateAsap evaluate = Async.StartImmediate <| 
       do! startAnalyzer (createInterpreterContext ()) bound    
       trigger Refresh
   with e ->
-    Log.exn("main", "Failed: %O", e) }
+    Log.exn("main", "Evaluator failed: %O", e) }
 
 let render trigger globalState = 
   h.stable [
@@ -423,7 +429,8 @@ let render trigger globalState =
                 member x.Trigger(evt) = trigger(BlockEvent(nd.Node.ID, evt))
                 member x.Refresh() = trigger Refresh }
           for idx, node in List.indexed (ed.Render(ctx, state)) do
-            yield sprintf "%s-%d" nd.Node.ID idx, node ]
+            yield sprintf "%s-%d" nd.Node.ID idx, node 
+    yield "debug", h?button ["click" =!> fun _ _ -> Debugger.visualizeGraph globalState.Nodes ] [text "Draw graph!"]  ]
 
 let update trigger globalState evt =
   match evt with
@@ -651,7 +658,7 @@ let demo2 =
 let state =
   let nodes = demo2 //parseMarkdown (Markdown.markdown.parse(demo))
   { BindingResult = BindingResult [||]
-    BindingContext = Binder.createContext languages evalEntity
+    BindingContext = Binder.createContext languages
     Nodes = nodes
     States = 
       [ for nd in nodes ->

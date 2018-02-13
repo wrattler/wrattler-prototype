@@ -36,9 +36,9 @@ type CustomEntityKind =
 
 and EntityKind = 
   | Root 
-  | Code of lang:string * code:string * frames:Entity list
+  | Code of lang:string * code:string * imports:Entity list
   | DataFrame of var:string * rblock:Entity
-  | CodeBlock of lang:string * code:Entity * vars:Entity list
+  | CodeBlock of lang:string * code:Entity * exports:Entity list
   | Notebook of blocks:Entity list
   | CustomEntity of CustomEntityKind
 

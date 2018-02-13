@@ -12,21 +12,14 @@ type RFrame =
   { name : string 
     url : string }
 
-type RInput = 
+type RInput<'T> =  /// 'T = RFrame for eval, 'T = string for exports
   { code : string 
     hash : string
-    frames : RFrame[] }
+    frames : 'T[] }
 
-type RExportsType = 
-  { kind : string }
-
-type RExportsTypeFrame = 
-  { kind : string 
-    columns : string[][] }
-
-type RExportsVar =   
-  { variable : string
-    ``type`` : RExportsType }
+type RExports = 
+  { exports : string[]
+    imports : string[] }
 
 let evalRCode hash (frames:seq<Name * string>) code = async {
   let req = { code = code; hash = hash; frames = [| for n, f in frames -> { name = n; url = f } |] }
@@ -36,17 +29,14 @@ let evalRCode hash (frames:seq<Name * string>) code = async {
 
 let exportsCache = System.Collections.Generic.Dictionary<string, _>() 
   
-let getExports hash (frames:seq<Name * string>) ent = async {
-  match ent with 
-  | { Kind = Code("r", code, _) } ->    
-      let key = hash + code + String.concat "," [ for k,v in frames -> k + v]
-      if not (exportsCache.ContainsKey key) then
-        let req = { code = code; hash = hash; frames = [| for n, f in frames -> { name = n; url = f } |] }
-        let! json = Http.Request("POST", rservice + "/exports", jsonStringify req)
-        let vars = unbox<RExportsVar[]> (jsonParse json)
-        exportsCache.[key] <- [ for v in vars -> v.variable ]
-      return exportsCache.[key]
-  | _ -> return [] }
+let getExports code hash (frames:seq<Name>) = async {
+  let key = hash + code + String.concat "," frames
+  if not (exportsCache.ContainsKey key) then
+    let req = { code = code; hash = hash; frames = Array.ofSeq frames }
+    let! json = Http.Request("POST", rservice + "/exports", jsonStringify req)
+    let res = unbox<RExports> (jsonParse json)
+    exportsCache.[key] <- (List.ofArray res.imports, List.ofArray res.exports)
+  return exportsCache.[key] }
 
 // ------------------------------------------------------------------------------------------------
 
@@ -88,11 +78,10 @@ let bindNode ctx (node:Node<_>) = async {
 // ------------------------------------------------------------------------------------------------
 
 /// Create a new binding context - this stores cached entities
-let createContext langs ev =
+let createContext langs =
   let root = { Language = "system"; Kind = EntityKind.Root; Symbol = createSymbol "root"; Value = None; Errors = []; Type = None; Meta = [] }
   { Table = System.Collections.Generic.Dictionary<_, _>(); 
     Bound = ResizeArray<_>(); Frames = Map.empty; 
-    Evaluate = ev
     Languages = langs
     //GlobalValues = Map.ofList [ for e in globals -> { Name = e.Name }, e ]
     Root = root }

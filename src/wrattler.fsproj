@@ -38,7 +38,8 @@
     <Compile Include="gamma/services.fs" />
     <Compile Include="gamma/monaco.fs" />
     <Compile Include="gamma/gamma.fs" />
-    <Compile Include="main.fs" />
+    <Compile Include="debug.fs" />
+  <Compile Include="main.fs" />
   </ItemGroup>
   <Import Project="..\.paket\Paket.Restore.targets" />
 </Project>
