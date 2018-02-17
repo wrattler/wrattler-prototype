@@ -162,7 +162,7 @@ let renderJsEntity ctx state entity =
         // TODO: Use entity symbol for h.delayed
         for out, i in Seq.zip outs [0 .. outs.Length-1] do
           let id = sprintf "output_%d_%d" i (hash code)
-          yield h.delayed id (text "") (fun id -> out id) 
+          yield (text "") |> h.once id (fun el -> out el.id) 
     | _ -> 
         yield h?ppp [] [ text (sprintf "No JS. Entity: %A" entity) ] ]
 
@@ -218,6 +218,14 @@ let jslang =
 
 open Wrattler.Html
 
+let (|MarkdownNode|_|) name (tree:obj) = 
+  if isArray tree then 
+    let tree = unbox<obj[]> tree
+    if tree.Length > 0 && isString tree.[0] && unbox<string> tree.[0] = name then 
+      Some (List.tail (List.ofArray tree))
+    else None
+  else None  
+
 let mdlang = 
   { new LanguagePlugin<obj, obj, _, _> with
       member x.Bind(ctx, block) = 
@@ -237,20 +245,19 @@ let mdlang =
       member x.Editor = 
         { new Editor<_, _> with
             member x.Initialize(nd) = nd 
-            member x.Render(ctx, nd) = 
+            member x.Render(id, ctx, nd) = 
               match nd.Node.BlockKind with 
               | :? MarkdownBlock as mb ->
-                  [ h?div ["class" => "block-markdown"] [
-                      yield h?div ["class" => "tools"] [
-                        h?a ["href" => "javascript:;"] [ h?i ["class" => "fa fa-code"] []; text "edit source" ] 
-                      ]
+                  h?div [] [
                       let tree = Markdown.markdown.toHTMLTree(Array.ofList(box "markdown"::mb.Parsed)) |> unbox<obj[]>
-                      for i in 1 .. tree.Length-1 do yield Rendering.renderHtmlTree tree.[i] ] ]
+                      for i in 1 .. tree.Length-1 do yield Rendering.renderHtmlTree tree.[i] ]
               | _ -> failwith "mdlang: Unexpected node"
             member x.Update(state, evt) = state } |> Some
       member x.TypeChecker = None
       member x.Interpreter = None
-      member x.Parse(block, code) = failwith "sys parser" }
+      member x.Parse(block, code) = 
+        let nodes = match Markdown.markdown.parse(code) with MarkdownNode "markdown" body -> body | _ -> failwith "No nodes"
+        { MarkdownBlock.Parsed = nodes } :> _, [] }
 
 let syslang = 
   { new LanguagePlugin<obj, obj, _, _> with
@@ -310,13 +317,6 @@ let startAnalyzer createContext (ent:Entity) = async {
 
 // ------------------------------------------------------------------------------------------------
 
-let (|MarkdownNode|_|) name (tree:obj) = 
-  if isArray tree then 
-    let tree = unbox<obj[]> tree
-    if tree.Length > 0 && isString tree.[0] && unbox<string> tree.[0] = name then 
-      Some (List.tail (List.ofArray tree))
-    else None
-  else None  
 
 (*
 let blockId = 
@@ -359,10 +359,16 @@ let parseMarkdown tree =
 
 open Wrattler.Html
 
+type ToolsState = 
+  | Normal
+  | Adding
+
 type State = 
   { BindingContext : BindingContext
     BindingResult : BindingResult
     Nodes : Node<Block> list 
+    SelectedNode : string option
+    ToolsState : ToolsState
     States : obj list }
 
 type Event = 
@@ -371,6 +377,11 @@ type Event =
   | BlockEvent of id:string * obj
   | UpdateNodes of Node<Block> list * obj list
   | UpdateBound of BindingResult
+  | SelectNode of string option
+  | DeleteBlock of string
+  | AddBlock of string * string
+  | OpenAddMenu
+  | CloseAddMenu
  
 let rec evalEntity bound ent = async {
   do! startAnalyzer (createCheckingContext (makeTcContext bound)) ent
@@ -416,8 +427,57 @@ let startEvaluation trigger state updateAsap evaluate = Async.StartImmediate <| 
   with e ->
     Log.exn("main", "Evaluator failed: %O", e) }
 
+let getColor =   
+  let colorMap = System.Collections.Generic.Dictionary<_, _>()
+  let mutable index = -1
+  let colors = Array.init 6 (sprintf "clr%d")
+  fun cat -> 
+    if not (colorMap.ContainsKey(cat)) then
+      index <- (index + 1) % colors.Length
+      colorMap.Add(cat, colors.[index])
+    colorMap.[cat]
+
+let renderTools trigger globalState selected id = 
+  h?div ["class" => "tools"] <|
+  match globalState.ToolsState with
+  | Adding when selected ->
+      [ for kv in languages do
+          if kv.Key <> "system" then
+            yield
+              h?a 
+                [ "href" => "javascript:;"; "title" => "Add " + kv.Key + " cell"
+                  "click" =!> fun _ _ -> trigger (AddBlock(kv.Key, id)) ] 
+                [ h?i ["class" => "fa fa-plus"] []; text kv.Key ]
+        yield
+          h?a 
+            [ "href" => "javascript:;"; "title" => "Cancel"
+              "click" =!> fun _ _ -> trigger CloseAddMenu ] 
+            [ h?i ["class" => "fa fa-times"] []; text "cancel" ]      
+      ]
+  | _ ->
+      ( if id <> "" then
+          [ h?a 
+              [ "href" => "javascript:;"; "title" => "Delete cell"
+                "click" =!> fun _ _ -> trigger (DeleteBlock id) ] 
+              [ yield h?i ["class" => "fa fa-times"] []
+                if selected then yield text "delete" ] ]
+        else [] ) @ 
+      [ h?a 
+          [ "href" => "javascript:;"; "title" => "Add cell"
+            "click" =!> fun _ _ -> trigger OpenAddMenu ]  
+          [ yield h?i ["class" => "fa fa-plus"] []
+            if selected then yield text "add" ] ]
+
 let render trigger globalState = 
-  h.stable [
+  h?div [] [
+    let selected = None = globalState.SelectedNode
+    yield 
+      h.elk "div" "block-0" 
+        [ "class" => 
+              "block block-" + getColor "system" +
+              (if selected then "-selected block-selected" else "")
+          "click" =!> fun _ _ -> trigger(SelectNode None) ] 
+        [ h?div ["class" => "block-body" ] [ renderTools trigger globalState selected "" ] ]
     for nd, state in Seq.zip globalState.Nodes globalState.States do
       match languages.[nd.Node.BlockKind.Language].Editor with
       | None -> ()
@@ -428,12 +488,65 @@ let render trigger globalState =
                 member x.TypeCheck(id, code) = typeCheck globalState id code
                 member x.Trigger(evt) = trigger(BlockEvent(nd.Node.ID, evt))
                 member x.Refresh() = trigger Refresh }
-          for idx, node in List.indexed (ed.Render(ctx, state)) do
-            yield sprintf "%s-%d" nd.Node.ID idx, node 
-    yield "debug", h?button ["click" =!> fun _ _ -> Debugger.visualizeGraph globalState.Nodes ] [text "Draw graph!"]  ]
+          let selected = Some nd.Node.ID = globalState.SelectedNode
+          yield 
+            h.elk "div" nd.Node.ID 
+              [ "class" => 
+                    "block block-" + getColor nd.Node.BlockKind.Language +
+                    (if selected then "-selected block-selected" else "")
+                "click" =!> fun _ _ -> trigger(SelectNode(Some nd.Node.ID)) ] 
+              [ h?div ["class" => "block-body" ] [
+                  ed.Render(nd.Node.ID, ctx, state)
+                  renderTools trigger globalState selected nd.Node.ID
+                ]
+              ]
+    yield h?button ["click" =!> fun _ _ -> Debugger.visualizeGraph globalState.Nodes ] [text "Draw graph!"]  ]
+
+let nextBlockId = 
+  let mutable counter = 1
+  fun () -> 
+    counter <- counter + 1
+    sprintf "block_%d" counter
+
 
 let update trigger globalState evt =
   match evt with
+  | OpenAddMenu ->
+      Some { globalState with ToolsState = ToolsState.Adding }
+  | CloseAddMenu ->
+      Some { globalState with ToolsState = ToolsState.Normal }
+
+  | AddBlock(lang, afterId) ->
+      let id = nextBlockId ()
+      let block, errors = languages.[lang].Parse(id, "")
+      let newNode = { Node = { ID = id; BlockKind = block; Errors = errors }; Entity = None; Range = { Block = id; Start = 0; End = 0; } }
+      let newState = 
+        match languages.[lang].Editor with
+        | None -> null
+        | Some ed -> ed.Initialize(newNode) 
+      let newNodes, newStates = 
+        if afterId = "" then newNode::globalState.Nodes, newState::globalState.States else 
+          List.zip globalState.Nodes globalState.States 
+          |> List.collect (fun (nd, st) ->
+              if nd.Node.ID = afterId then [nd, st; newNode, newState]
+              else [nd, st] )
+          |> List.unzip
+      trigger CloseAddMenu
+      startEvaluation trigger { globalState with Nodes = newNodes; States = newStates } true true
+      None
+
+  | DeleteBlock(id) ->
+      let newNodes, newStates = 
+        List.zip globalState.Nodes globalState.States 
+        |> List.filter (fun (nd, st) -> nd.Node.ID <> id)
+        |> List.unzip
+      startEvaluation trigger { globalState with Nodes = newNodes; States = newStates } true true
+      None
+
+  | SelectNode nd ->
+      if nd = globalState.SelectedNode then None 
+      else Some { globalState with SelectedNode = nd; ToolsState = ToolsState.Normal }
+
   | Refresh -> 
       Log.trace("gui", "Refresh")
       Some globalState
@@ -472,28 +585,24 @@ let update trigger globalState evt =
       Some { globalState with BindingResult = bound }
       
 
-let node = 
-  let mutable counter = 0
-  fun () -> 
-    counter <- counter + 1
-    sprintf "block_%d" counter
-
-let markdown (src:string) = 
-  let id = node ()
-  let src = src.Split('\n') |> Array.map (fun l -> if l.Length >= 6 then l.Substring(6) else l) 
-  let src = String.concat "\n" (if src.[0].Trim() = "" then src.[1..] else src)
-  let nodes = match Markdown.markdown.parse(src) with MarkdownNode "markdown" body -> body | _ -> failwith "No nodes"
-  let block = { Parsed = nodes }
-  { Node = { ID = id; BlockKind = block; Errors = [] }; Entity = None; Range = { Block = id; Start = 0; End = 0; } }
-
 let code lang (src:string) = 
-  let id = node ()
+  let id = nextBlockId ()
   let src = src.Split('\n') |> Array.map (fun l -> if l.Length >= 6 then l.Substring(6) else l) 
   let src = String.concat "\n" (if src.[0].Trim() = "" then src.[1..] else src)
   let block, errors = languages.[lang].Parse(id, src)
   { Node = { ID = id; BlockKind = block; Errors = errors }; Entity = None; Range = { Block = id; Start = 0; End = 0; } }
 
 let demo = 
+  [ code "markdown" """
+      # Hello world""" 
+    code "gamma" """
+      1 + 2"""
+    code "javascript" """
+      addOutput(function (id) {
+        document.getElementById(id).style.color = "red";
+        document.getElementById(id).innerHTML = "<marquee>Hello world!</marquee>";
+      });"""      
+      ]
 (*  [ markdown """
       # Testing things!!
     """
@@ -534,7 +643,8 @@ let demo =
           .'Permute columns'.'Delete all recommended columns'.Result
     """
   ]
-*) //(*
+*) //
+(*
   [ markdown """
       # UK broadband data analysis
       
@@ -660,6 +770,8 @@ let state =
   { BindingResult = BindingResult [||]
     BindingContext = Binder.createContext languages
     Nodes = nodes
+    ToolsState = ToolsState.Normal
+    SelectedNode = None
     States = 
       [ for nd in nodes ->
           match languages.[nd.Node.BlockKind.Language].Editor with
@@ -668,4 +780,25 @@ let state =
 
 let app = createVirtualDomApp "demo" state render update
 app.Trigger(StartEvaluation true)
+(*
 
+let updatee trigger state evt = 
+  state + evt |> Some
+
+let renderr trigger state = 
+  h?div [] [
+    for i in 1 .. state ->
+      h?h1 ["id" => "d" + string i] [
+        text ("Hello " + string i)
+      ] |> h.func (fun () ->
+        let el = Browser.document.getElementById("d" + string i)
+        Browser.console.log(el.dataset.["initialized"])
+        el.dataset.["initialized"] <- "true"
+      )
+    yield h?button ["click" =!> fun _ _ -> trigger 1 ] [ text "Yo" ]
+  ]
+
+let app = createVirtualDomApp "demo" 1 renderr updatee 
+app.Trigger( 0 )
+
+*)

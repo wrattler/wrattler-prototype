@@ -19,6 +19,7 @@
   <link href="http://visjs.org/dist/vis-network.min.css" rel="stylesheet" type="text/css" />
 
   <style type="text/css">
+    /* Visualizing the dependency graph */
     #wrattlergraph {
       width: 100vw;
       height: 100vh;
@@ -33,7 +34,75 @@
       width: 100vw;
       height: 100vh;
     }
+    
+    /* Blocks */
+    .block {
+      background:red;
+      cursor:pointer;
+      margin-top:15px;
+    }
+    .block .block-body {
+      margin-right:8px;
+      padding-right:10px;
+      background:white;
+      cursor:default;
+    }
+    .block .tools {
+      text-align:right;
+      font-size:10pt;
+      font-weight:bold;
+      padding-right:10px;
+      min-height:20px;
+    }
+    .block .tools i {
+      margin:0px 0px 0px 10px;
+    }
+    .block-selected .tools i {
+      margin-right:5px;
+    }
 
+    /*
+
+ 
+
+
+
+ 
+
+
+
+ 
+
+    
+    */    .block-clr1 { background:#8DD3C7; }
+    .block-clr1-selected { background:#4F9589; }
+    .block-clr1 a, .block-clr1-selected a { color:#8DD3C7; }
+    .block-clr1 a:hover, .block-clr1-selected a:hover { color:#4F9589; text-decoration:none; }
+    .block-clr2 { background:#BEBADA; }
+    .block-clr2-selected { background:#827E9E; }
+    .block-clr2 a, .block-clr2-selected a { color:#BEBADA; }
+    .block-clr2 a:hover, .block-clr2-selected a:hover { color:#827E9E; text-decoration:none; }
+    .block-clr3 { background:#FDB462; }
+    .block-clr3-selected { background:#C27927; }
+    .block-clr3 a, .block-clr3-selected a { color:#FDB462; }
+    .block-clr3 a:hover, .block-clr3-selected a:hover { color:#C27927; text-decoration:none; }
+    .block-clr4 { background:#B3DE69; }
+    .block-clr4-selected { background:#7AA530; }
+    .block-clr4 a, .block-clr4-selected a { color:#B3DE69; }
+    .block-clr4 a:hover, .block-clr4-selected a:hover { color:#7AA530; text-decoration:none; }
+    .block-clr5 { background:#FB8072; }
+    .block-clr5-selected { background:#B13628; }
+    .block-clr5 a, .block-clr5-selected a { color:#FB8072; }
+    .block-clr5 a:hover, .block-clr5-selected a:hover { color:#B13628; text-decoration:none; }
+    .block-clr6 { background:#80B1D3; }
+    .block-clr6-selected { background:#37688A; }
+    .block-clr6 a, .block-clr6-selected a { color:#80B1D3; }
+    .block-clr6 a:hover, .block-clr6-selected a:hover { color:#37688A; text-decoration:none; }
+    .block-clr0 { background:#D1D1D1; }
+    .block-clr0-selected { background:#939393; }
+    .block-clr0 a, .block-clr0-selected a { color:#D1D1D1; }
+    .block-clr0 a:hover, .block-clr0-selected a:hover { color:#939393; text-decoration:none; }
+/*
     .block-markdown {
       padding:10px;
     }
@@ -68,7 +137,7 @@
     .tools a:hover {
       color:#909090;
     }
-
+*/
 
     
     .nav { 

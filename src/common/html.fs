@@ -24,12 +24,13 @@ type DomAttribute =
 
 type DomNode = 
   | Text of string
-  | Delayed of string * DomNode * (string -> unit)
-  | Stable of (string * DomNode) list
-  | Custom of (string -> obj) * (obj -> unit)
-  | Element of ns:string * tag:string * attributes:(string * DomAttribute)[] * children : DomNode[] * onRender : (HTMLElement -> unit) option
+  //| Delayed of string * DomNode * (string -> unit)
+  //| Stable of (string * DomNode) list
+  //| Custom of (string -> obj) * (obj -> unit)
+  | Element of ns:string * tag:string * key:string * attributes:(string * DomAttribute)[] * children : DomNode[] 
+  | Func of DomNode * (unit -> unit) 
 
-let createTree ns tag args children =
+let createTree ns tag key args children =
   let attrs = ResizeArray<_>()
   let props = ResizeArray<_>()
   for k, v in args do
@@ -41,19 +42,25 @@ let createTree ns tag args children =
     | k, Event f ->
         props.Add ("on" + k, box (fun o -> f (getProperty o "target") (event()) ))
   let attrs = JsInterop.createObj attrs
-  let ns = if ns = null || ns = "" then [] else ["namespace", box ns]
-  let props = JsInterop.createObj (Seq.append (ns @ ["attributes", attrs]) props)
-  let elem = Virtualdom.h(tag, props, children)
-  elem
+  props.Add("attributes", attrs)
+  if ns <> null && ns <> "" then props.Add("namespace", box ns)
+  if key <> null && key <> "" then props.Add("key", box key)
+  let props = JsInterop.createObj props
+  Virtualdom.h(tag, props, children)
 
 let mutable counter = 0
 
 let rec renderVirtual node = 
   match node with
   | Text(s) -> 
-      box s
-  | Element(ns, tag, attrs, children, None) ->
-      createTree ns tag attrs (Array.map renderVirtual children)
+      box s, []
+  | Element(ns, tag, key, attrs, children) ->
+      let children, funcs = Array.map renderVirtual children |> Array.unzip
+      createTree ns tag key attrs children, List.concat funcs
+  | Func(node, func) ->
+      let dom, fs = renderVirtual node
+      dom, func::fs
+  (*
   | Delayed(symbol, body, func) ->
       counter <- counter + 1
       let id = sprintf "delayed_%d" counter
@@ -75,29 +82,31 @@ let rec renderVirtual node =
           waitForAdded 10 node
       let h = createNew Hook ()
 
-      createTree null "div" ["renderhk", Property h] [| renderVirtual body |]
-  | Element _ ->
-      failwith "renderVirtual: Does not support elements with after-render handlers"
+      createTree null "div" ["renderhk", Property h] [| renderVirtual body |], []
   | Custom _
   | Stable _ ->
       failwith "renderVirtual: Unexpected stable or custom inside DOM node"
-
+      *)
 let rec render node = 
   match node with
-  | Custom _
-  | Stable _ ->
-      failwith "Stable not supported by render"
+  //| Custom _
+  //| Stable _ ->
+    //  failwith "Stable not supported by render"
+
+  | Func(node, func) ->
+      let dom, f = render node
+      dom, fun () -> f(); func()
 
   | Text(s) -> 
       document.createTextNode(s) :> Node, ignore
-
+      (*
   | Delayed(_, _, func) ->
       counter <- counter + 1
       let el = document.createElement("div")
       el.id <- sprintf "delayed_%d" counter
       el :> Node, (fun () -> func el.id)
-
-  | Element(ns, tag, attrs, children, f) ->
+      *)
+  | Element(ns, tag, _, attrs, children) ->
       let el = 
         if ns = null || ns = "" then document.createElement(tag)
         else document.createElementNS(ns, tag) :?> HTMLElement
@@ -110,7 +119,6 @@ let rec render node =
         | Event(f) -> el.addEventListener(k, U2.Case1(EventListener(f el)))
       let onRender () = 
         for _, f in rc do f()
-        f |> FsOption.iter (fun f -> f el)
       el :> Node, onRender
 
 let renderTo (node:HTMLElement) dom = 
@@ -139,6 +147,7 @@ let patchLists oldList newList =
     | [], [] -> List.rev acc
   loop [] oldList newList
 
+  (*
 let createVirtualDomApp id initial r update = 
   let event = new Event<'T>()
   let trigger e = event.Trigger(e)  
@@ -176,9 +185,11 @@ let createVirtualDomApp id initial r update =
               Some(k, (node, o))
           | dom ->
               let tree = Fable.Core.JsInterop.createObj []
-              let newTree = renderVirtual dom
+              let newTree, fs = renderVirtual dom
               let patches = Virtualdom.diff tree newTree
-              Some(k, (Virtualdom.patch node patches, newTree))
+              let patched = Virtualdom.patch node patches
+              for f in fs do f()
+              Some(k, (patched, newTree))
 
       | Update((node, o), Custom(_, update)) ->
           lastBlock <- Some node
@@ -187,14 +198,43 @@ let createVirtualDomApp id initial r update =
 
       | Update((node, tree), dom) ->
           lastBlock <- Some node
-          let newTree = renderVirtual dom
+          let newTree, fs = renderVirtual dom
           let patches = Virtualdom.diff tree newTree
-          Some(k, (Virtualdom.patch node patches, newTree)) )
+          let patched = Virtualdom.patch node patches
+          for f in fs do f()
+          Some(k, (patched, newTree)) )
   
   handleEvent None
   event.Publish.Add(Some >> handleEvent)
   { Trigger = trigger }
+  *)
+
+let createVirtualDomApp id initial r u = 
+  let event = new Event<'T>()
+  let trigger e = event.Trigger(e)  
+  let mutable container = document.createElement("div") :> Node
+  document.getElementById(id).innerHTML <- ""
+  document.getElementById(id).appendChild(container) |> ignore
+  let mutable tree = Fable.Core.JsInterop.createObj []
+  let mutable state = initial
+
+  let handleEvent evt = 
+    match evt with 
+    | Some e -> 
+        match u trigger state e with
+        | Some newState -> state <- newState
+        | _ -> ()
+    | _ -> ()
+    let newTree, funcs = r trigger state |> renderVirtual
+    let patches = Virtualdom.diff tree newTree
+    container <- Virtualdom.patch container patches
+    for f in funcs do f()
+    tree <- newTree
   
+  handleEvent None
+  event.Publish.Add(Some >> handleEvent)
+  { Trigger = trigger }
+
 let text s = Text(s)
 let (=>) k v = k, Attribute(v)
 let (=!>) k f = k, Event(f)
@@ -203,11 +243,24 @@ let (=!>) k f = k, Event(f)
 type El(ns) = 
   member x.Namespace = ns
   static member (?) (el:El, n:string) = fun a b ->
-    Element(el.Namespace, n, Array.ofList a, Array.ofList b, None)
+    Element(el.Namespace, n, null, Array.ofList a, Array.ofList b)
 
   member x.el(n:string) = fun a b ->
-    Element(x.Namespace, n, Array.ofList a, Array.ofList b, None)
+    Element(x.Namespace, n, null, Array.ofList a, Array.ofList b)
 
+  member x.elk(n:string) = fun k a b ->
+    Element(x.Namespace, n, k, Array.ofList a, Array.ofList b)
+
+  member x.func f node =
+    Func(node, f)
+
+  member x.once id f node = 
+    Func(Element(x.Namespace, "div", null, [|"id" => "htmlonce-" + id|], [| node |]), fun () ->
+      let el = Browser.document.getElementById("htmlonce-" + id)
+      if (el.dataset.["initialized"] <> "true") then
+        f el
+        el.dataset.["initialized"] <- "true")
+(*
   member x.delayed sym body f =
     Delayed(sym, body, f)
 
@@ -216,6 +269,7 @@ type El(ns) =
 
   member x.custom (create:string -> 'T) (update:'T -> unit) = 
     Custom((fun s -> box (create s)), (unbox >> update))    
+*)
 
 let h = El(null)
 let s = El("http://www.w3.org/2000/svg")

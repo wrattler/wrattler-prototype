@@ -65,10 +65,9 @@ let renderFutureTable (f:Future<_>) trigger =
       renderObjectsTable (Array.map snd table)
   | None -> 
       counter <- counter + 1
-      h.delayed 
-        (sprintf "future-table-%d" counter)
-        (h?div ["class" => "preview"] [ h?p [] [text "Loading..."] ])
-        (fun id -> f.Then(fun table -> renderObjectsTable (Array.map snd table) |> Html.renderTo (Browser.document.getElementById(id))))
+      h?div ["class" => "preview"] [ h?p [] [text "Loading..."] ]
+      |> h.once (sprintf "future-table-%d" counter) (fun el -> 
+        f.Then(fun table -> renderObjectsTable (Array.map snd table) |> Html.renderTo el))
 
 let createMonacoEditor id lang code = 
   let services = JsInterop.createEmpty<editor.IEditorOverrideServices>
@@ -126,15 +125,12 @@ type CodeEditorEvent =
   | UpdateCode of bool * string
   | UpdatePosition of int
 
-let renderEditor renderEntity onCreated (ctx:EditorContext<_>) state lang src =
-  [ h.custom 
-      (fun elid ->
+let renderEditor elid renderEntity onCreated (ctx:EditorContext<_>) state lang src =
+  h?div [] [ 
+    h?div [] [] |> h.once ("block-editor-" + elid) (fun el ->
         h?div ["class" => "block-input"] [
-          h?div ["class" => "tools"] [
-            h?a ["href" => "javascript:;"] [ h?i ["class" => "fa fa-code"] []; text "hide source" ] 
-          ]
           h?div ["id" => elid + "_editor" ] []
-        ] |> renderTo (Browser.document.getElementById(elid))
+        ] |> renderTo el
 
         let ed = createMonacoEditor (elid + "_editor") lang src 
         onCreated (ctx, state.Node.Node.ID, ed)
@@ -155,9 +151,7 @@ let renderEditor renderEntity onCreated (ctx:EditorContext<_>) state lang src =
           ctx.Trigger(UpdateCode(false, source))  ) |> ignore
         ed.onKeyDown(fun ke -> 
           if ke.altKey && ke.keyCode = KeyCode.Enter then
-            ctx.Trigger(UpdateCode(true, ed.getModel().getValue(editor.EndOfLinePreference.LF, false)))  ) |> ignore
-        ed )
-      (fun ed -> () )
+            ctx.Trigger(UpdateCode(true, ed.getModel().getValue(editor.EndOfLinePreference.LF, false)))  ) |> ignore )
 
     h?div [] [
       match state.Node.Entity with
@@ -176,9 +170,9 @@ let renderEditor renderEntity onCreated (ctx:EditorContext<_>) state lang src =
 let createStandardEditor renderEntity onCreated =
   { new Editor<CodeEditorEvent, CodeEditorState> with 
       member x.Initialize(node) = { Block = node.Node.ID; Node = node; SelectedVariable = None; Position = -1 }
-      member x.Render(ctx, state) = 
+      member x.Render(id, ctx, state) = 
         match state.Node.Node.BlockKind with
-        | :? CodeBlock as cb -> renderEditor renderEntity onCreated ctx state cb.Language cb.Code
+        | :? CodeBlock as cb -> renderEditor id renderEntity onCreated ctx state cb.Language cb.Code
         | _ -> failwith "createStandardEditor: Wrong block kind"
       member x.Update(evt, state) = 
         match evt with 

@@ -194,8 +194,8 @@ let renderGamma (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity 
     let rec loop value typ =
       match value, typ with
       | Some(CustomValue v), Some(GammaType(Type.Object(FindMember "show" mem))) -> 
-        h.delayed (id + "output") (text "Loading output...") (fun id -> 
-          Log.trace("gui", "Calling show on Gamma object..."); callShow v id) |> Some
+        (text "Loading output...") |> h.once (id + "output") (fun el -> 
+          Log.trace("gui", "Calling show on Gamma object..."); callShow v el.id) |> Some
       | Some(Frame df), _ -> 
           Rendering.renderTable df ctx.Refresh |> Some
       | Some(CustomValue s), Some(GammaType(Type.Object(:? Wrattler.Gamma.TypeProviders.FSharpProvider.GenericType as gt))) 

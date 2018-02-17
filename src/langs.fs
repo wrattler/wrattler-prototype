@@ -20,7 +20,7 @@ and EditorState<'TState> =
 
 and Editor<'TEvent, 'TState> = 
   abstract Initialize : Node<Block> -> 'TState
-  abstract Render : EditorContext<'TEvent> * 'TState -> list<Html.DomNode>
+  abstract Render : string * EditorContext<'TEvent> * 'TState -> Html.DomNode
   abstract Update : 'TEvent * 'TState -> EditorState<'TState>
 
 and GlobalAnalyzerContext = 
