@@ -166,7 +166,7 @@ let renderJsEntity ctx state entity =
     | _ -> 
         yield h?ppp [] [ text (sprintf "No JS. Entity: %A" entity) ] ]
 
-let renderFrames (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity =
+let renderFrames (ctx:EditorContext<_>) (state:Rendering.StandardEditorState) entity =
   [ match entity with 
     | { Kind = EntityKind.CodeBlock(_, _, vars) } ->
         let vars = vars |> List.choose (function { Kind = DataFrame(var, _); Value = Some(Frame value) } -> Some(var, value) | _ -> None)
@@ -218,14 +218,6 @@ let jslang =
 
 open Wrattler.Html
 
-let (|MarkdownNode|_|) name (tree:obj) = 
-  if isArray tree then 
-    let tree = unbox<obj[]> tree
-    if tree.Length > 0 && isString tree.[0] && unbox<string> tree.[0] = name then 
-      Some (List.tail (List.ofArray tree))
-    else None
-  else None  
-
 let mdlang = 
   { new LanguagePlugin<obj, obj, _, _> with
       member x.Bind(ctx, block) = 
@@ -243,21 +235,20 @@ let mdlang =
         | _ -> failwith "mdlang: Unexpected node"
 
       member x.Editor = 
-        { new Editor<_, _> with
-            member x.Initialize(nd) = nd 
-            member x.Render(id, ctx, nd) = 
-              match nd.Node.BlockKind with 
-              | :? MarkdownBlock as mb ->
-                  h?div [] [
-                      let tree = Markdown.markdown.toHTMLTree(Array.ofList(box "markdown"::mb.Parsed)) |> unbox<obj[]>
-                      for i in 1 .. tree.Length-1 do yield Rendering.renderHtmlTree tree.[i] ]
-              | _ -> failwith "mdlang: Unexpected node"
-            member x.Update(state, evt) = state } |> Some
+        let renderView (state:Rendering.ToggleEditorState) = 
+          match state.Node.Node.BlockKind with 
+          | :? MarkdownBlock as mb ->
+            h?div [] [
+              let tree = Markdown.markdown.toHTMLTree(Array.ofList(box "markdown"::mb.Parsed)) |> unbox<obj[]>
+              for i in 1 .. tree.Length-1 do yield Rendering.renderHtmlTree tree.[i] ]
+          | _ -> failwith "mdlang: Unexpected node in renderView"
+        Some(Rendering.createToggleEditor renderView ignore)
       member x.TypeChecker = None
       member x.Interpreter = None
       member x.Parse(block, code) = 
-        let nodes = match Markdown.markdown.parse(code) with MarkdownNode "markdown" body -> body | _ -> failwith "No nodes"
-        { MarkdownBlock.Parsed = nodes } :> _, [] }
+        let cb = { MarkdownBlock.Source = ""; Parsed = [] } :> CodeBlock
+        let block, errs = cb.WithCode(code)
+        block :> _, errs }
 
 let syslang = 
   { new LanguagePlugin<obj, obj, _, _> with
@@ -380,8 +371,8 @@ type Event =
   | SelectNode of string option
   | DeleteBlock of string
   | AddBlock of string * string
-  | OpenAddMenu
-  | CloseAddMenu
+  | OpenAddMenu of string option
+  | CloseAddMenu 
  
 let rec evalEntity bound ent = async {
   do! startAnalyzer (createCheckingContext (makeTcContext bound)) ent
@@ -446,25 +437,25 @@ let renderTools trigger globalState selected id =
             yield
               h?a 
                 [ "href" => "javascript:;"; "title" => "Add " + kv.Key + " cell"
-                  "click" =!> fun _ _ -> trigger (AddBlock(kv.Key, id)) ] 
+                  "click" =!> fun _ e -> e.cancelBubble <- true; trigger (AddBlock(kv.Key, id)) ] 
                 [ h?i ["class" => "fa fa-plus"] []; text kv.Key ]
         yield
           h?a 
             [ "href" => "javascript:;"; "title" => "Cancel"
-              "click" =!> fun _ _ -> trigger CloseAddMenu ] 
+              "click" =!> fun _ e -> e.cancelBubble <- true; trigger CloseAddMenu ] 
             [ h?i ["class" => "fa fa-times"] []; text "cancel" ]      
       ]
   | _ ->
       ( if id <> "" then
           [ h?a 
               [ "href" => "javascript:;"; "title" => "Delete cell"
-                "click" =!> fun _ _ -> trigger (DeleteBlock id) ] 
+                "click" =!> fun _ e -> e.cancelBubble <- true; trigger (DeleteBlock id) ] 
               [ yield h?i ["class" => "fa fa-times"] []
                 if selected then yield text "delete" ] ]
         else [] ) @ 
       [ h?a 
           [ "href" => "javascript:;"; "title" => "Add cell"
-            "click" =!> fun _ _ -> trigger OpenAddMenu ]  
+            "click" =!> fun _ e -> e.cancelBubble <- true; trigger (OpenAddMenu(if id = "" then None else Some id)) ]  
           [ yield h?i ["class" => "fa fa-plus"] []
             if selected then yield text "add" ] ]
 
@@ -482,13 +473,15 @@ let render trigger globalState =
       match languages.[nd.Node.BlockKind.Language].Editor with
       | None -> ()
       | Some ed ->          
+          let selected = 
+            Some nd.Node.ID = globalState.SelectedNode
           let ctx = 
             { new EditorContext<_> with
+                member x.Selected = selected
                 member x.Bound = globalState.BindingResult
                 member x.TypeCheck(id, code) = typeCheck globalState id code
                 member x.Trigger(evt) = trigger(BlockEvent(nd.Node.ID, evt))
                 member x.Refresh() = trigger Refresh }
-          let selected = Some nd.Node.ID = globalState.SelectedNode
           yield 
             h.elk "div" nd.Node.ID 
               [ "class" => 
@@ -511,8 +504,8 @@ let nextBlockId =
 
 let update trigger globalState evt =
   match evt with
-  | OpenAddMenu ->
-      Some { globalState with ToolsState = ToolsState.Adding }
+  | OpenAddMenu nd ->
+      Some { globalState with ToolsState = ToolsState.Adding; SelectedNode = nd }
   | CloseAddMenu ->
       Some { globalState with ToolsState = ToolsState.Normal }
 
@@ -779,6 +772,7 @@ let state =
           | Some ed -> ed.Initialize(nd) ] }
 
 let app = createVirtualDomApp "demo" state render update
+Browser.document.body.onclick <- fun _ -> app.Trigger(SelectNode None); null
 app.Trigger(StartEvaluation true)
 (*
 

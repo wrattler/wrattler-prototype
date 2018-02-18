@@ -114,18 +114,18 @@ let createMonacoEditor id lang code =
 
 // ------------------------------------------------------------------------------------------------
 
-type CodeEditorState = 
+type StandardEditorState = 
   { Node : Node<Block>
     Block : string
     Position : int
     SelectedVariable : string option }
 
-type CodeEditorEvent = 
+type StandardEditorEvent = 
   | DisplayVariable of string
   | UpdateCode of bool * string
   | UpdatePosition of int
 
-let renderEditor elid renderEntity onCreated (ctx:EditorContext<_>) state lang src =
+let renderStandardEditor elid renderEntity onCreated (ctx:EditorContext<_>) state lang src =
   h?div [] [ 
     h?div [] [] |> h.once ("block-editor-" + elid) (fun el ->
         h?div ["class" => "block-input"] [
@@ -168,11 +168,11 @@ let renderEditor elid renderEntity onCreated (ctx:EditorContext<_>) state lang s
   ]
 
 let createStandardEditor renderEntity onCreated =
-  { new Editor<CodeEditorEvent, CodeEditorState> with 
+  { new Editor<StandardEditorEvent, StandardEditorState> with 
       member x.Initialize(node) = { Block = node.Node.ID; Node = node; SelectedVariable = None; Position = -1 }
       member x.Render(id, ctx, state) = 
         match state.Node.Node.BlockKind with
-        | :? CodeBlock as cb -> renderEditor id renderEntity onCreated ctx state cb.Language cb.Code
+        | :? CodeBlock as cb -> renderStandardEditor id renderEntity onCreated ctx state cb.Language cb.Code
         | _ -> failwith "createStandardEditor: Wrong block kind"
       member x.Update(evt, state) = 
         match evt with 
@@ -189,4 +189,52 @@ let createStandardEditor renderEntity onCreated =
             let st = { state with Node = { Range = state.Node.Range; Node = nd; Entity = None } } 
             { StartEvaluation = Some run; Node = st.Node; State = st } }
 
+// ------------------------------------------------------------------------------------------------
 
+type ToggleEditorState = 
+  { Node : Node<Block> 
+    Source : string 
+    Language : string }
+
+type ToggleEditorEvent = 
+  | UpdateCode of string
+
+let renderToggleEditor elid renderView onCreated (ctx:EditorContext<_>) state lang src =
+  if ctx.Selected then 
+    h.elk "div" (elid + "-editor") [] [] |> h.once ("block-editor-" + elid) (fun el ->
+        h?div ["class" => "block-input"] [
+          h?div ["id" => elid + "_editor" ] []
+        ] |> renderTo el
+
+        let ed = createMonacoEditor (elid + "_editor") lang src 
+        onCreated (ctx, state.Node.Node.ID, ed)
+
+        ed.onDidChangeModelContent(fun me ->
+          let source = ed.getModel().getValue(editor.EndOfLinePreference.LF, false)
+          ctx.Trigger(UpdateCode(source))  ) |> ignore )
+  else 
+    h.elk "div" (elid + "-view") [] [
+      renderView state
+    ]
+
+let createToggleEditor renderView onCreated =
+  { new Editor<ToggleEditorEvent, ToggleEditorState> with 
+      member x.Initialize(node) =
+        match node.Node.BlockKind with
+        | :? CodeBlock as cb -> { Node = node; Source = cb.Code; Language = cb.Language }
+        | _ -> failwith "createToggleEditor: Wrong block kind"
+
+      member x.Render(id, ctx, state) = 
+        match state.Node.Node.BlockKind with
+        | :? CodeBlock as cb -> renderToggleEditor id renderView onCreated ctx state cb.Language cb.Code
+        | _ -> failwith "createToggleEditor: Wrong block kind"
+      member x.Update(evt, state) =
+        match evt with
+        | UpdateCode newCode ->
+            let cb, errs = 
+              match state.Node.Node.BlockKind with
+              | :? CodeBlock as cb -> cb.WithCode(newCode)
+              | _ -> failwith "createToggleEditor: Wrong block kind"
+            let nd = { state.Node.Node with BlockKind = cb; Errors = errs }
+            let st = { state with Node = { Range = state.Node.Range; Node = nd; Entity = None } } 
+            { StartEvaluation = None; Node = st.Node; State = st } }

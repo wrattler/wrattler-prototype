@@ -12,6 +12,7 @@ type EditorContext<'TEvent> =
   abstract Trigger : 'TEvent -> unit
   abstract TypeCheck : string * string -> Async<BindingResult>
   abstract Bound : BindingResult
+  abstract Selected : bool
 
 and EditorState<'TState> = 
   { StartEvaluation : bool option
@@ -85,8 +86,23 @@ type CodeBlock =
   abstract Code : string
   abstract WithCode : string -> CodeBlock * Error list
 
+open Fable.Import
+
+let (|MarkdownNode|_|) name (tree:obj) = 
+  if isArray tree then 
+    let tree = unbox<obj[]> tree
+    if tree.Length > 0 && isString tree.[0] && unbox<string> tree.[0] = name then 
+      Some (List.tail (List.ofArray tree))
+    else None
+  else None  
+
 type MarkdownBlock = 
-  { Parsed : obj list }
+  { Source : string; Parsed : obj list }
   interface BlockKind with
     member x.Language = "markdown"
+  interface CodeBlock with
+    member x.Code = x.Source
+    member x.WithCode newCode = 
+      let nodes = match Markdown.markdown.parse(newCode) with MarkdownNode "markdown" body -> body | _ -> failwith "No nodes"
+      { Source = newCode; Parsed = nodes } :> _, []
 

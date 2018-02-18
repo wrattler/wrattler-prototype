@@ -188,7 +188,7 @@ open Wrattler.Html
 [<Fable.Core.Emit("$0.show($1)")>]
 let callShow (o:obj) (id:string) : unit = failwith "JS"
 
-let renderGamma (ctx:EditorContext<_>) (state:Rendering.CodeEditorState) entity =
+let renderGamma (ctx:EditorContext<_>) (state:Rendering.StandardEditorState) entity =
   
   let (|EntityDisplay|_|) id (ent:Entity) = 
     let rec loop value typ =
