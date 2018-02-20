@@ -468,7 +468,9 @@ let render trigger globalState =
               "block block-" + getColor "system" +
               (if selected then "-selected block-selected" else "")
           "click" =!> fun _ _ -> trigger(SelectNode None) ] 
-        [ h?div ["class" => "block-body" ] [ renderTools trigger globalState selected "" ] ]
+        [ h?div ["class" => "block-body" ] [ 
+            h?div ["class" => "block-input"] []
+            renderTools trigger globalState selected "" ] ]
     for nd, state in Seq.zip globalState.Nodes globalState.States do
       match languages.[nd.Node.BlockKind.Language].Editor with
       | None -> ()
@@ -485,7 +487,7 @@ let render trigger globalState =
           yield 
             h.elk "div" nd.Node.ID 
               [ "class" => 
-                    "block block-" + getColor nd.Node.BlockKind.Language +
+                    "block block-" + nd.Node.BlockKind.Language + " block-" + getColor nd.Node.BlockKind.Language +
                     (if selected then "-selected block-selected" else "")
                 "click" =!> fun _ _ -> trigger(SelectNode(Some nd.Node.ID)) ] 
               [ h?div ["class" => "block-body" ] [
@@ -493,7 +495,16 @@ let render trigger globalState =
                   renderTools trigger globalState selected nd.Node.ID
                 ]
               ]
-    yield h?button ["click" =!> fun _ _ -> Debugger.visualizeGraph globalState.Nodes ] [text "Draw graph!"]  ]
+    yield 
+      h?div ["class" => "block block-" + getColor "system"] [
+        h?div ["class" => "block-body" ] [ 
+          h?div ["class" => "block-input"] [
+            text "Debugging tools: "
+            h?a ["click" =!> fun _ _ -> Debugger.visualizeGraph globalState.Nodes 
+                 "href" => "javascript:;" ] [text "draw dependency graph"]  ]
+          ]
+        ]
+      ]
 
 let nextBlockId = 
   let mutable counter = 1
@@ -585,60 +596,73 @@ let code lang (src:string) =
   let block, errors = languages.[lang].Parse(id, src)
   { Node = { ID = id; BlockKind = block; Errors = errors }; Entity = None; Range = { Block = id; Start = 0; End = 0; } }
 
-let demo = 
+let empty = 
   [ code "markdown" """
-      # Hello world""" 
+      # Wrattler demos
+      Click the `+` button on the right to add a new cell. You can choose between different kinds of cells.
+      As an exeample, try the following:
+
+      ### Markdown
+      You can type any Markdown content in a Markdown cell. Try for example:
+
+      Try: `Hello _world_!`
+
+      ### TheGamma
+      You can type TheGamma scripts in TheGamma cell. Try the following and then type `.` to see what is available!
+
+      Try: `web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls")`
+
+      ### R scripts
+      You can type R code in R cells. Try the following and hit `Alt+Enter`. You should see newly exposed data sets:
+
+      Try: `test <- iris`
+
+      ### JavaScript
+      You can type arbirtrary JavaScript in a JavaScript cell. Try the following and then hit `Alt+Enter` to run the code
+      (note that the results are cached, so hitting `Alt+Enter` twice doesn't show the alert again).
+
+      Try: `window.alert("Hello world!")`
+      """  ]
+
+let broadband = 
+(*
+  [ code "markdown" """
+      # UK broadband speed
+      
+      ### Getting the data
+
+      This sample Wrattler notebook looks at the UK broadband speed for the year 2014. 
+      We use TheGamma to get the raw data from the UK government web page 
+      ([CSV file](https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls)) 
+      and group internet speeds by whether they are in urban or rural areas:""" 
     code "gamma" """
-      1 + 2"""
+      let byUrbanRural =
+        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls")
+          .explore.'group data'.'by Urban/rural'.'average Download speed (Mbit/s) 24 hrs'.then
+          .'filter data'.'Urban/rural is not'.''.then
+          .'get series'.'with key Urban/rural'.'and value Download speed (Mbit/s) 24 hrs'"""
+    code "markdown" """
+      ### Building Vega visualization
+      Now that we obtained the data and performed the aggregation, we use a JavaScript 
+      library [Vega Lite](https://vega.github.io/vega-lite/) to display the data as a chart.
+      Note that we can run arbitrary JavaScript here - try adding `alert("Hello world!")` and
+      hitting `Alt+Enter`.
+      """
     code "javascript" """
-      addOutput(function (id) {
-        document.getElementById(id).style.color = "red";
-        document.getElementById(id).innerHTML = "<marquee>Hello world!</marquee>";
+      var spec = 
+        { "$schema": "https://vega.github.io/schema/vega-lite/v2.0.json",
+          "mark": "bar", "width": 800, "height": 300,
+          "data": { "values": byUrbanRural },
+          "encoding": {
+            "x": {"field": "key", "type": "ordinal"},
+            "y": {"field": "value", "type": "quantitative"},
+            "color": {"field": "key", "type": "nominal", "scale": { "range": ["#90AA4C", "#4B61A8"] }} } }
+      addOutput(function(id) { 
+        vega.embed("#" + id, spec, {actions:false});
       });"""      
       ]
-(*  [ markdown """
-      # Testing things!!
-    """
-    code "gamma" """
-      let bb2014 = 
-        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls")
-          .explore.'drop columns'.'drop Id'.'drop Distance band'.'drop Distance band used for weighting'
-          .'drop DNS failure (%)24-hour'.'drop DNS failure (%)8-10pm weekday'.'drop DNS resolution (ms)24-hour'
-          .'drop DNS resolution (ms)8-10pm weekday'.'drop Download speed (Mbit/s) 8-10pm weekday'.'drop Download speed (Mbit/s) Max'
-          .'drop Headline speed'.'drop ISP'.'drop isp weights'.'drop Jitter down (ms)24-hour'.'drop Jitter down (ms)8-10pm weekday'
-          .'drop Jitter up (ms)24-hour'.'drop Jitter up (ms)8-10pm weekday'.'drop Latency (ms)8-10pm weekday'.'drop LLU'
-          .'drop Market'.'drop nat weights'.'drop Packet loss (%)24-hour'.'drop Packet loss (%)8-10pm weekday'.'drop Technology'
-          .'drop Upload speed (Mbit/s)8-10pm weekday'.'drop Upload speed (Mbit/s)Max'.'drop Web page (ms)8-10pm weekday'
-          .then.'get the data'
-    
-      let bb2015nice = 
-        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls")
-          .explore.'drop columns'.'drop Disconnections'.'drop Dist_ADSL1'.'drop Dist_ADSL2'.'drop DL24hrmax'
-          .'drop DLpeakmax'.'drop DLpeakmean'.'drop DNSFail24hr'.'drop DNSFailPeak'.'drop DNSRTTPeak'.'drop iPlayerFailed24hr'
-          .'drop iPlayerFailedPeak'.'drop iPlayerHD24hr'.'drop iPlayerHDPeak'.'drop iPlayerSD24hr'.'drop iPlayerSDPeak'
-          .'drop iPlayerStartupDelayPeak'.'drop iPlayerUHD24hr'.'drop iPlayerUHDPeak'.'drop JitterDown24hr'
-          .'drop JitterDownPeak'.'drop JitterUp24hr'.'drop JitterUpPeak'.'drop LatencyPeak'.'drop Nation'
-          .'drop NetflixFailed24hr'.'drop NetflixFailedPeak'.'drop NetflixHD24hr'.'drop NetflixHDPeak'
-          .'drop NetflixSD24hr'.'drop NetflixSDPeak'.'drop NetflixStartupDelay24hr'.'drop NetflixStartupDelayPeak'
-          .'drop NetflixUHD24hr'.'drop NetflixUHDPeak'.'drop Pack_number'.'drop PacketLoss24hr'.'drop PacketLossPeak'
-          .'drop Plusnet_upload'.'drop Tech'.'drop UL24hrmax'.'drop UL24hrmax_A'.'drop UL24hrmean_A'.'drop unit_id'
-          .'drop Valid_panel'.'drop WebPeak'.'drop WT_ISP'.'drop WT_national'.'drop YouTubeFailed24hr'
-          .'drop YouTubeFailedPeak'.'drop YouTubeHD24hr'.'drop YouTubeHDPeak'.'drop YouTubeSD24hr'.'drop YouTubeSDPeak'
-          .'drop YouTubeStartupDelay24hr'.'drop YouTubeStartupDelayPeak'.'drop YouTubeUHD24hr'.'drop YouTubeUHDPeak'
-          .then.'get the data'
-
-      let bb2015 = 
-        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls")
-          .explore.'get the data' """ 
-    code "gamma" """
-      let bb2015fix = 
-        datadiff.adapt(bb2015, bb2014).then.'Delete column WT_national'
-          .'Permute columns'.'Delete all recommended columns'.Result
-    """
-  ]
-*) //
-(*
-  [ markdown """
+      *)
+  [ code "markdown" """
       # UK broadband data analysis
       
       We look at data on UK broadband [published by Ofcom](https://www.ofcom.org.uk/research-and-data/telecoms-research/broadband-research).
@@ -646,8 +670,10 @@ let demo =
 
       ### 1. Data exploration
       
-      First, we use TheGamma to get the data and explore it interactively.
+      First, we use TheGamma to get the data and explore it interactively...
 
+      We look at data on UK broadband [published by Ofcom](https://www.ofcom.org.uk/research-and-data/telecoms-research/broadband-research).
+      This analysis is fully transparent. We link directly to the government source. First, explore the data.
       """
     code "gamma" """
       let data =
@@ -658,7 +684,7 @@ let demo =
 
       compost.charts.bar(data)
     """
-    markdown """
+    code "markdown" """
       ###  2.  Data acquisition
 
       Now, download data for years 2014 and 2015. We clean data for 2015 manually and select rows we want.
@@ -679,7 +705,7 @@ let demo =
         web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls")
           .explore.'get the data'    
     """ 
-    markdown """
+    code "markdown" """
       ### 3. Automatic data cleaning
       To clean data for 2015, we use the `datadiff` assistant, which helps us adapt corrupted or messy dataset to a
       format of a clean dataset containing strucutrally same data.
@@ -689,7 +715,7 @@ let demo =
         datadiff.adapt(bb2015, bb2014).then.'Delete column WT_national'
           .'Delete all recommended columns'.Result
     """
-    markdown "
+    code "markdown" "
       ### 4. Polyglot data analysis
       So far, we did all the work in simple interactive TheGamma language. Now is time to do some real work! 
       We will use R to do some analysis. Note that all data frames are automatically available.
@@ -710,7 +736,7 @@ let demo =
 
       predicted <- data.frame(Urban=pred, ActualUrban=test$Urban)
     """
-    markdown """
+    code "markdown" """
       ### 5. Interactive data visualization
       Thanks to the polyglot nature, we can mix TheGamma, R, JavaScript in one notebook.
       To conclude, let's draw a simple chart using the Vega visualization library.
@@ -752,6 +778,9 @@ let demo =
         """
   ]
 //*)
+
+let demo = 
+  if Browser.window.location.pathname.Contains("broadband") then broadband else empty
 
 let demo2 = 
   if Browser.window.location.hash.Length > 1 then

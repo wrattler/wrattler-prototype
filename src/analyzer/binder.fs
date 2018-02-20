@@ -3,8 +3,8 @@ open Wrattler.Ast
 
 // ------------------------------------------------------------------------------------------------
 
-//let rservice = "http://wrattler-r-service.azurewebsites.net"
-let rservice = "http://localhost:7101"
+let rservice = "https://wrattler-r-service.azurewebsites.net"
+//let rservice = "http://localhost:7101"
 
 open Wrattler.Common
 

@@ -250,7 +250,7 @@ type El(ns) =
 
   member x.elk(n:string) = fun k a b ->
     Element(x.Namespace, n, k, Array.ofList a, Array.ofList b)
-
+      
   member x.func f node =
     Func(node, f)
 

@@ -127,10 +127,9 @@ type StandardEditorEvent =
 
 let renderStandardEditor elid renderEntity onCreated (ctx:EditorContext<_>) state lang src =
   h?div [] [ 
-    h?div [] [] |> h.once ("block-editor-" + elid) (fun el ->
-        h?div ["class" => "block-input"] [
-          h?div ["id" => elid + "_editor" ] []
-        ] |> renderTo el
+    h?div ["class" => "block-input"] [
+      yield h?div [] [] |> h.once ("block-editor-" + elid) (fun el ->
+        h?div ["id" => elid + "_editor" ] [] |> renderTo el
 
         let ed = createMonacoEditor (elid + "_editor") lang src 
         onCreated (ctx, state.Node.Node.ID, ed)
@@ -152,11 +151,19 @@ let renderStandardEditor elid renderEntity onCreated (ctx:EditorContext<_>) stat
         ed.onKeyDown(fun ke -> 
           if ke.altKey && ke.keyCode = KeyCode.Enter then
             ctx.Trigger(UpdateCode(true, ed.getModel().getValue(editor.EndOfLinePreference.LF, false)))  ) |> ignore )
-
-    h?div [] [
       match state.Node.Entity with
-      | Some ent ->
-          yield h?ul[] [ for e in ent.Errors -> h?li [] [ text e.Message ] ]
+      | Some ent when not (List.isEmpty ent.Errors) ->
+          let conv = LocationMapper(src)
+          yield h?div ["class" => "errors"] [ 
+              h?ul[] [ 
+                for e in ent.Errors -> 
+                  let line, col = conv.AbsoluteToLineCol(e.Range.Start)
+                  h?li [] [ 
+                    h?span ["class" => "err"] [ text (sprintf "error %d" e.Number) ]
+                    h?span ["class" => "loc"] [ text (sprintf "at line %d col %d" line col) ]
+                    text (": " + e.Message) ] 
+                ]
+            ]
       | _ -> () 
     ]
 
@@ -201,19 +208,19 @@ type ToggleEditorEvent =
 
 let renderToggleEditor elid renderView onCreated (ctx:EditorContext<_>) state lang src =
   if ctx.Selected then 
-    h.elk "div" (elid + "-editor") [] [] |> h.once ("block-editor-" + elid) (fun el ->
-        h?div ["class" => "block-input"] [
-          h?div ["id" => elid + "_editor" ] []
-        ] |> renderTo el
+    h.elk "div" (elid + "-editor") ["class" => "block-input"] [
+      h?div [] [] |> h.once ("block-editor-" + elid) (fun el ->
+        h?div ["id" => elid + "_editor" ] [] |> renderTo el
 
         let ed = createMonacoEditor (elid + "_editor") lang src 
         onCreated (ctx, state.Node.Node.ID, ed)
 
         ed.onDidChangeModelContent(fun me ->
           let source = ed.getModel().getValue(editor.EndOfLinePreference.LF, false)
-          ctx.Trigger(UpdateCode(source))  ) |> ignore )
+          ctx.Trigger(UpdateCode(source))  ) |> ignore ) 
+    ]
   else 
-    h.elk "div" (elid + "-view") [] [
+    h.elk "div" (elid + "-view") ["class" => "block-output"] [
       renderView state
     ]
 

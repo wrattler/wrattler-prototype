@@ -99,11 +99,11 @@ let globals = buildGlobalsTable (fun lookup -> async {
       lookup (resolveProvider lookup false) "web" "https://gallery-csv-service.azurewebsites.net/providers/data" ""
   let! ol = 
     TypeProviders.Pivot.providePivotType 
-      "http://thegamma-services.azurewebsites.net/pdata/olympics" false "olympics" lookup
+      "https://thegamma-services.azurewebsites.net/pdata/olympics" false "olympics" lookup
     
   let dd = 
     TypeProviders.RestProvider.provideRestType 
-      lookup (resolveProvider lookup false) "datadiff" "http://localhost:10037/datadiff" "" 
+      lookup (resolveProvider lookup false) "datadiff" "https://wrattler-datadiff-service.azurewebsites.net/datadiff" ""  //"http://localhost:10037/datadiff" "" 
   return js @ [ ol; wb; dd; dt ] })
 
 // ------------------------------------------------------------------------------------------------
