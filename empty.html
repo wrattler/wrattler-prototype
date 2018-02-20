@@ -1,0 +1,202 @@
+﻿<!doctype html>
+<html>
+<head>
+  <title>Wrattler Notebook</title>
+  <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="shortcut icon" type="image/png" href="favicon-32x32.png" sizes="32x32" />
+  <link rel="shortcut icon" type="image/png" href="favicon-16x16.png" sizes="16x16" />
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta/css/bootstrap.min.css" 
+    integrity="sha384-/Y6pD6FV/Vv2HJnA6t+vslU6fwYXjCFtcEpHbNJ0lyAFsXTsjBbfaDjzALeQsN6M" crossorigin="anonymous">  
+  <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" 
+    integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://thegamma.net/lib/thegamma-0.1/thegamma.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vega/3.0.2/vega.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vega-lite/2.0.0-rc3/vega-lite.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vega-embed/3.0.0-beta.20/vega-embed.js"></script>
+  
+  <script src="http://visjs.org/dist/vis.js"></script>  
+  <link href="http://visjs.org/dist/vis-network.min.css" rel="stylesheet" type="text/css" />
+
+  <style type="text/css">
+    @import url(https://fonts.googleapis.com/css?family=Roboto:400,700,400italic);
+
+    body { background:#f8f8f8; font-family:Roboto; }
+    #demo { background:white; padding:15px 0px 10px 0px; min-height:100vh; }
+    
+    /* Visualizing the dependency graph */
+    #wrattlergraph {
+      width: 100vw;
+      height: 100vh;
+      position:sticky;
+      left:0px;
+      top:0px;
+      z-index:1000;
+      background:white;
+      display:none;
+    }
+    #wrattlergraph-output {
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Error list */
+    .block-input .errors {
+      padding:5px;
+      width:100%;
+    }
+    .block-input .errors ul, .block-input .errors li {
+      list-style:none;
+      margin:0px;
+      padding:0px;
+    }
+    .block-input .errors li .err {
+      background:#D16159;
+      color:white;
+      padding:1px 5px 1px 5px;
+      margin-right:5px;
+      font-weight:bold;
+      font-size:9pt;
+    }
+    .block-input .errors li .loc {
+      color:#a0a0a0;
+    }
+    .block-input .errors li {
+      color:#303030;
+      font-size:10pt;
+      margin:2px 0px 2px 0px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Blocks */
+    .block {
+      cursor:pointer;
+    }
+    .block .block-body {
+      margin-right:8px;
+      background:white;
+      cursor:default;
+      position:relative;
+    }
+    .block .tools {
+      display:inline-block;
+      position:absolute;
+      right:0px;
+      bottom:0px;
+      text-align:right;
+      font-size:10pt;
+      font-weight:bold;
+      padding-right:10px;
+      min-height:20px;
+    }
+    .block .tools i {
+      margin:0px 0px 0px 10px;
+    }
+    .block-selected .tools i {
+      margin-right:5px;
+    }
+    .block-input { 
+      padding:10px 10px 10px 20px;
+      border-left:8px solid #D1D1D1; 
+    }
+    .block-output { 
+      padding:10px 10px 10px 20px;
+      border-left:8px solid #f0f0f0; 
+    }
+
+    
+    .block-clr0 { background:#D1D1D1; }
+    .block-clr0-selected { background:#939393; }
+    .block-clr0 .tools a, .block-clr0-selected .tools a { color:#D1D1D1; }
+    .block-clr0 .tools a:hover, .block-clr0-selected .tools a:hover { color:#939393; text-decoration:none; }
+    .block-clr1 { background:#8DD3C7; }
+    .block-clr1-selected { background:#4F9589; }
+    .block-clr1 .tools a, .block-clr1-selected .tools a { color:#8DD3C7; }
+    .block-clr1 .tools a:hover, .block-clr1-selected .tools a:hover { color:#4F9589; text-decoration:none; }
+    .block-clr2 { background:#BEBADA; }
+    .block-clr2-selected { background:#827E9E; }
+    .block-clr2 .tools a, .block-clr2-selected .tools a { color:#BEBADA; }
+    .block-clr2 .tools a:hover, .block-clr2-selected .tools a:hover { color:#827E9E; text-decoration:none; }
+    .block-clr3 { background:#FDB462; }
+    .block-clr3-selected { background:#C27927; }
+    .block-clr3 .tools a, .block-clr3-selected .tools a { color:#FDB462; }
+    .block-clr3 .tools a:hover, .block-clr3-selected .tools a:hover { color:#C27927; text-decoration:none; }
+    .block-clr4 { background:#B3DE69; }
+    .block-clr4-selected { background:#7AA530; }
+    .block-clr4 .tools a, .block-clr4-selected .tools a { color:#B3DE69; }
+    .block-clr4 .tools a:hover, .block-clr4-selected .tools a:hover { color:#7AA530; text-decoration:none; }
+    .block-clr5 { background:#FB8072; }
+    .block-clr5-selected { background:#B13628; }
+    .block-clr5 .tools a, .block-clr5-selected .tools a { color:#FB8072; }
+    .block-clr5 .tools a:hover, .block-clr5-selected .tools a:hover { color:#B13628; text-decoration:none; }
+    .block-clr6 { background:#80B1D3; }
+    .block-clr6-selected { background:#37688A; }
+    .block-clr6 .tools a, .block-clr6-selected .tools a { color:#80B1D3; }
+    .block-clr6 .tools a:hover, .block-clr6-selected .tools a:hover { color:#37688A; text-decoration:none; }
+    
+    .nav { 
+      margin:10px 0px 10px 0px; 
+    }
+    .preview .table th {
+      border-top-style:none;
+    }
+    .preview .table th, .preview .table td {
+      padding:4px;
+      font-size:11pt;
+    }
+    .preview {
+      max-height:400px;
+      overflow-y:scroll;
+    }
+    .preview::-webkit-scrollbar  {
+      width:8px;
+      height:8px;
+      background:#f0f0f0;
+    }
+    .preview::-webkit-scrollbar-track {
+      background:transparent;
+    }
+    .preview::-webkit-scrollbar-thumb {
+      border-radius:4px;
+      background-color:#c0c0c0;
+    }
+
+  </style>
+  
+</head>
+<body>
+  <div id="wrattlergraph">
+    <button onclick="document.getElementById('wrattlergraph').style.display = 'none';">Hide</button>
+    <div id="wrattlergraph-output"></div>
+  </div>
+  <div class="container"><div class="row"><div class="col-sm-12">
+    <div id="demo" onclick="event.cancelBubble = true;"></div>
+  </div></div></div>
+
+<!--   
+  <script>var require = { paths: { 'vs': 'lib/vs' } };</script>
+  <script src="lib/vs/loader.js"></script>
+  <script src="lib/vs/editor/editor.main.nls.js"></script>
+  <script src="lib/vs/editor/editor.main.js"></script>
+  <script src="bundle.js"></script> 
+-->
+ 
+    <script src="lib/require.js"></script>
+    <script>
+        require.config({
+            paths: { 'vs': 'lib/vs' },
+            map: {
+                "*": {
+                    "monaco": "vs/editor/editor.main"
+                }
+            }
+        });
+        require(["monaco"], function(_) {
+          require(["bundle"]);
+        });
+    </script>
+<!--  -->
+</body>
+</html>
