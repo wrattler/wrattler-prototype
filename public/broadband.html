@@ -11,17 +11,23 @@
   <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" 
     integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
   <link rel="stylesheet" href="https://thegamma.net/lib/thegamma-0.1/thegamma.css">
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vega/3.0.2/vega.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vega-lite/2.0.0-rc3/vega-lite.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vega-embed/3.0.0-beta.20/vega-embed.js"></script>
-  
+ 
+  <script src="https://d3js.org/d3.v3.min.js"></script>
+  <script src="https://cdn.rawgit.com/newrelic-forks/d3-plugins-sankey/master/sankey.js"></script>
+  <script src="https://cdn.rawgit.com/misoproject/d3.chart/master/d3.chart.min.js"></script>
+  <script src="https://cdn.rawgit.com/q-m/d3.chart.sankey/master/d3.chart.sankey.min.js"></script>
+   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet" type="text/css" />
 
   <style type="text/css">
     @import url(https://fonts.googleapis.com/css?family=Roboto:400,700,400italic);
 
-    body { background:#f8f8f8; font-family:Roboto; }
+    body { background:#f8f8f8; font-family:Roboto; padding-bottom:500px; }
     #demo { background:white; padding:15px 0px 10px 0px; min-height:100vh; }
     
     /* Visualizing the dependency graph */
@@ -163,6 +169,26 @@
       background-color:#c0c0c0;
     }
 
+    .nav-pills .nav-link {
+      background:transparent !important;
+      color:#c1c1c1 !important;
+      padding:0px 5px 0px 5px;
+      margin-right:15px;
+      border-bottom:solid 6px #c1c1c1;
+      border-radius:0px;
+      margin-bottom:-6px;
+    }
+    .nav-pills .active {
+      color:#888888 !important;
+      border-bottom:solid 6px #888888;
+    }
+    .nav-pills .nav-link:hover {
+      color:#606aa0 !important;
+      border-bottom:solid 6px #606aa0;
+    }
+    .nav-pills {
+      border-bottom:solid 6px #e0e0e0;
+    }
   </style>
   
 </head>
@@ -172,31 +198,37 @@
     <div id="wrattlergraph-output"></div>
   </div>
   <div class="container"><div class="row"><div class="col-sm-12">
+    <style>
+      .node rect {
+        fill-opacity: .9;
+        shape-rendering: crispEdges;
+        stroke-width: 0;
+      }
+      .node text {
+        text-shadow: 0 1px 0 #fff;
+      }
+      .link {
+        fill: none;
+        stroke: #000;
+        stroke-opacity: .2;
+      }
+    </style>
     <div id="demo" onclick="event.cancelBubble = true;"></div>
   </div></div></div>
 
-<!--   
-  <script>var require = { paths: { 'vs': 'lib/vs' } };</script>
-  <script src="lib/vs/loader.js"></script>
-  <script src="lib/vs/editor/editor.main.nls.js"></script>
-  <script src="lib/vs/editor/editor.main.js"></script>
-  <script src="bundle.js"></script> 
--->
- 
-    <script src="lib/require.js"></script>
-    <script>
-        require.config({
-            paths: { 'vs': 'lib/vs' },
-            map: {
-                "*": {
-                    "monaco": "vs/editor/editor.main"
-                }
+  <script src="lib/require.js"></script>
+  <script>
+    require.config({
+        paths: { 'vs': 'lib/vs' },
+        map: {
+            "*": {
+                "monaco": "vs/editor/editor.main"
             }
-        });
-        require(["monaco"], function(_) {
-          require(["bundle"]);
-        });
-    </script>
-<!--  -->
+        }
+    });
+    require(["monaco"], function(_) {
+      require(["bundle"]);
+    });
+  </script>
 </body>
 </html>

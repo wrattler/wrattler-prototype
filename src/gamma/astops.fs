@@ -361,7 +361,7 @@ let rebuildExprNode e es ns =
   | Expr.Boolean _, _, _
   | Expr.String _, _, _
   | Expr.Empty, _, _ -> failwith "rebuildExprNode: Not a node"
-
+*)
 /// ExprNode matches when an expression contains nested expressions or names,
 /// ExprLeaf matches when an expression is a primitive (number, bool, etc..)
 let (|ExprLeaf|ExprNode|) e = 
@@ -377,7 +377,7 @@ let (|ExprLeaf|ExprNode|) e =
   | Expr.Boolean _
   | Expr.String _
   | Expr.Empty -> ExprLeaf()
-  *)
+  
 /// Find object member with the specified name 
 let (|FindMember|_|) (name:Name) (obj:ObjectType) = 
   obj.Members |> Seq.tryPick (fun m -> if m.Name = name then Some(m) else None) 

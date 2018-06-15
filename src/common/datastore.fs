@@ -3,8 +3,8 @@
 open Fable.Core
 open Wrattler.Common
 
-//let dataStoreUrl = "http://localhost:7102"
-let dataStoreUrl = "https://wrattler-data-store.azurewebsites.net"
+let dataStoreUrl = "http://localhost:7102"
+//let dataStoreUrl = "https://wrattler-data-store.azurewebsites.net"
 
 let cachedFrames = System.Collections.Generic.Dictionary<string, Future<obj[]>>()
 

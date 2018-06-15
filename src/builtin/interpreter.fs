@@ -11,18 +11,18 @@ let evalR (ctx:Languages.AnalyzerContext<_>) ent = async {
   | EntityKind.CodeBlock(lang, rcode, exports) ->
       do! ctx.Analyze(rcode, ctx.Context)
       for v in exports do do! ctx.Analyze(v, ctx.Context)
-      return Nothing
+      return "", Nothing
 
   | EntityKind.Code("r", code, imports) ->
       let vars = imports |> List.choose (function { Kind = DataFrame(n, _); Value = Some(Frame v) } -> Some(n, v) | _ -> None)
-      let! res = evalRCode (ent.Symbol.ToString()) vars code
-      return res 
+      let! console, frames = evalRCode (ent.Symbol.ToString()) vars code
+      return console, frames
 
   | EntityKind.DataFrame(v, rblock) ->
       do! ctx.Analyze(rblock, ctx.Context)
       match rblock.Value with
-      | Some(Frames frames) when Map.containsKey v frames -> return Frame(Map.find v frames)
-      | Some(Frames _) -> return Nothing // The variable was not really a frame
+      | Some(Frames frames) when Map.containsKey v frames -> return "", Frame(Map.find v frames)
+      | Some(Frames _) -> return "", Nothing // The variable was not really a frame
       | v -> return failwithf "R block did not evaluate to Frames but to %A" v
 
   | _ -> 
@@ -33,7 +33,7 @@ let evalJs (ctx:Languages.AnalyzerContext<_>) ent = async {
   | EntityKind.CodeBlock(lang, jscode, exports) ->
       do! ctx.Analyze(jscode, ctx.Context)
       for v in exports do do! ctx.Analyze(v, ctx.Context)
-      return Nothing
+      return "", Nothing
 
   | Code("javascript", code, imports) ->
       let vars = imports |> List.choose (function 
@@ -51,7 +51,7 @@ let evalJs (ctx:Languages.AnalyzerContext<_>) ent = async {
         frames.Add(frame)
       let outputs = ResizeArray<_>()
       eval<((string -> unit) -> unit) -> obj[][] -> unit> code outputs.Add (frames.ToArray())
-      return (Outputs(outputs.ToArray())) 
+      return "", (Outputs(outputs.ToArray())) 
 
   | _ -> 
       return failwithf "Not a JS entity: %A" ent }

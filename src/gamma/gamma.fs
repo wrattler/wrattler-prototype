@@ -23,6 +23,7 @@ let globalEntity name meta typ expr =
     Type = Some typ
     Meta = meta
     Value = None
+    Console = None
     Language = "gamma"
     Errors = [] }
 
@@ -96,14 +97,15 @@ let globals = buildGlobalsTable (fun lookup -> async {
       lookup (resolveProvider lookup false) "worldbank" "https://thegamma-services.azurewebsites.net/worldbank" ""
   let dt = 
     TypeProviders.RestProvider.provideRestType  
-      lookup (resolveProvider lookup false) "web" "https://gallery-csv-service.azurewebsites.net/providers/data" ""
+      lookup (resolveProvider lookup false) "web" "http://localhost:8897/providers/data/" ""
   let! ol = 
     TypeProviders.Pivot.providePivotType 
       "https://thegamma-services.azurewebsites.net/pdata/olympics" false "olympics" lookup
     
   let dd = 
     TypeProviders.RestProvider.provideRestType 
-      lookup (resolveProvider lookup false) "datadiff" "https://wrattler-datadiff-service.azurewebsites.net/datadiff" ""  //"http://localhost:10037/datadiff" "" 
+      //lookup (resolveProvider lookup false) "datadiff" "https://wrattler-datadiff-service.azurewebsites.net/datadiff" ""  
+      lookup (resolveProvider lookup false) "datadiff" "http://localhost:10037/datadiff" "" 
   return js @ [ ol; wb; dd; dt ] })
 
 // ------------------------------------------------------------------------------------------------
@@ -150,7 +152,7 @@ let gammaChecker =
             return failwithf "GammaLanguage: Wrong entity (tc): %A" ent } }
 
 let gammaInterpreter = 
-  { new Analyzer<unit, Wrattler.Ast.Value, _> with
+  { new Analyzer<unit, string * Wrattler.Ast.Value, _> with
       member x.CreateContext(_) = 
         async.Return { Interpreter.EvaluationContext.Results = ResizeArray<_>() }
       member x.Analyze(ent, ctx) = async {
@@ -170,15 +172,16 @@ let gammaInterpreter =
                   if isObject (snd data.[0]) then Array.map snd data 
                   else data |> Array.map (fun (k, v) -> Fable.Core.JsInterop.createObj ["key", k; "value", v])
                 let! url = Wrattler.Datastore.storeFrame ent.Symbol.ID "it" json
-                return Value.Frame(url) 
+                return "", Value.Frame(url) 
             | _ -> 
-                return Value.Nothing 
+                return "", Value.Nothing 
 
         | { Kind = GammaEntity(ge) } ->
-            return! Interpreter.evaluate ctx ent
+            let! res = Interpreter.evaluate ctx ent
+            return "", res
         | { Kind = CodeBlock("gamma", body, _) } ->
             do! ctx.Analyze(body, ctx.Context)
-            return body.Value.Value
+            return "", body.Value.Value
         | _ -> 
             return failwith "GammaLanguage: Wrong entity (eval)" } }
 
@@ -194,7 +197,8 @@ let renderGamma (ctx:EditorContext<_>) (state:Rendering.StandardEditorState) ent
     let rec loop value typ =
       match value, typ with
       | Some(CustomValue v), Some(GammaType(Type.Object(FindMember "show" mem))) -> 
-        (text "Loading output...") |> h.once (id + "output") (fun el -> 
+        Log.trace("gui", "Returning preview with id: %s", id + ent.Symbol.ID + "output")
+        (text "Loading output...") |> h.once (id + ent.Symbol.ID + "output") (fun el -> 
           Log.trace("gui", "Calling show on Gamma object..."); callShow v el.id) |> Some
       | Some(Frame df), _ -> 
           Rendering.renderTable df ctx.Refresh |> Some
@@ -217,16 +221,16 @@ let renderGamma (ctx:EditorContext<_>) (state:Rendering.StandardEditorState) ent
           let label, display = 
             match cmd.Kind with 
             | GammaEntity(GammaEntityKind.LetCommand({ Kind = GammaEntity(GammaEntityKind.Variable(v, _)) }, frame, value)) -> 
-                [h?i ["class"=>"fa fa-table"; "style"=>"margin-right:10px"][]; text v], (value, frame)
+                [h?i ["class"=>"fa fa-table"; "style"=>"margin-right:5px"][]; text v], (value, frame)
             | GammaEntity(GammaEntityKind.RunCommand(value)) -> 
-                [h?i ["class"=>"fa fa-pie-chart"; "style"=>"margin-right:10px"][]; text "(output)"], (value, value)
+                [h?i ["class"=>"fa fa-pie-chart"; "style"=>"margin-right:5px"][]; text "(output)"], (value, value)
             | _ -> failwith "renderGamma: Expected let or run command" 
           let id = string i
           id, label, if (selected = None && i = 0) || Some id = selected then Some display else None )
 
         let currentCommands = 
           ctx.Bound.Entities |> Seq.choose (fun (rng, ent) ->
-            if rng.Block <> state.Block || state.Position < rng.Start || state.Position > rng.End then None else
+            if rng.Block <> state.Block || state.Position < rng.Start || state.Position - 1 > rng.End then None else
             match ent.Kind with
             | GammaEntity(GammaEntityKind.LetCommand(_, frame, body)) -> Some(body, frame) 
             | GammaEntity(GammaEntityKind.RunCommand(body)) -> Some(body, body)  
@@ -237,7 +241,7 @@ let renderGamma (ctx:EditorContext<_>) (state:Rendering.StandardEditorState) ent
         let listItems =
           match currentCommand with
           | Some(res) -> 
-              let preview = "-1", [h?i ["class"=>"fa fa-refresh"; "style"=>"margin-right:10px"][]; text "(current)"], Some(res)
+              let preview = "-1", [h?i ["class"=>"fa fa-refresh"; "style"=>"margin-right:5px"][]; text "(current)"], Some(res)
               preview :: [ for a, b, _ in listItems -> a, b, None ]
           | _ -> listItems
 
@@ -260,9 +264,10 @@ let renderGamma (ctx:EditorContext<_>) (state:Rendering.StandardEditorState) ent
             | Some(_, EntityDisplay id show) | Some(EntityDisplay id show, _) -> 
                 yield show
             | Some({ Value = None }, _) -> 
-                yield h?p [] [ text "Not evaluated yet..." ]
+                yield h?p [] [ text "The object has not been evaluate yet." ]
             | Some display -> 
-                yield h?p [] [ text (sprintf "Something else: %O" display) ]
+                //yield h?p [] [ text (sprintf "Something else: %O" display) ]
+                yield h?p [] [ text "The object does not have a preview." ]
             | _ -> ()
           ]
     | ent ->

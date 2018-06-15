@@ -3,14 +3,18 @@ open Wrattler.Ast
 
 // ------------------------------------------------------------------------------------------------
 
-let rservice = "https://wrattler-r-service.azurewebsites.net"
-//let rservice = "http://localhost:7101"
+//let rservice = "https://wrattler-r-service.azurewebsites.net"
+let rservice = "http://localhost:7101"
 
 open Wrattler.Common
 
 type RFrame = 
   { name : string 
     url : string }
+
+type REvalResult = 
+  { output : string
+    frames : RFrame[] }
 
 type RInput<'T> =  /// 'T = RFrame for eval, 'T = string for exports
   { code : string 
@@ -24,8 +28,8 @@ type RExports =
 let evalRCode hash (frames:seq<Name * string>) code = async {
   let req = { code = code; hash = hash; frames = [| for n, f in frames -> { name = n; url = f } |] }
   let! json = Http.Request("POST", rservice + "/eval", jsonStringify req)
-  let vars = unbox<RFrame[]> (jsonParse json)
-  return Frames(Map.ofList [ for v in vars -> v.name, v.url ]) }
+  let res = unbox<REvalResult> (jsonParse json)
+  return res.output, Frames(Map.ofList [ for v in res.frames -> v.name, v.url ]) }
 
 let exportsCache = System.Collections.Generic.Dictionary<string, _>() 
   
@@ -58,7 +62,7 @@ let bindEntity ctx lang kind =
     Log.trace("binder", "New %s binding: %s", lang, formatEntityKind kind)
     let full = code + String.concat "\n" [ for a in antecedents -> a.Symbol.ToString() ]
     let symbol = createSymbol (getHashCode full)
-    let entity = { Language = lang; Kind = kind; Symbol = symbol; Value = None; Errors = []; Type = None; Meta = [] }
+    let entity = { Language = lang; Kind = kind; Symbol = symbol; Value = None; Errors = []; Type = None; Meta = []; Console = None }
     ListDictionary.set symbols (Map.add (code) entity nestedDict) ctx.Table
     entity    
 
@@ -79,7 +83,7 @@ let bindNode ctx (node:Node<_>) = async {
 
 /// Create a new binding context - this stores cached entities
 let createContext langs =
-  let root = { Language = "system"; Kind = EntityKind.Root; Symbol = createSymbol "root"; Value = None; Errors = []; Type = None; Meta = [] }
+  let root = { Language = "system"; Kind = EntityKind.Root; Symbol = createSymbol "root"; Value = None; Errors = []; Type = None; Meta = []; Console = None }
   { Table = System.Collections.Generic.Dictionary<_, _>(); 
     Bound = ResizeArray<_>(); Frames = Map.empty; 
     Languages = langs

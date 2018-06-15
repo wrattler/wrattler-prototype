@@ -143,6 +143,9 @@
     <Compile Include="../src/gamma/providers/pivot.fs">
       <Link>gamma/providers/pivot.fs</Link>
     </Compile>
+    <Compile Include="../src/gamma/live/pivot.fs">
+      <Link>gamma/live/pivot.fs</Link>
+    </Compile>
     <Compile Include="../src/gamma/interpreter.fs">
       <Link>gamma/interpreter.fs</Link>
     </Compile>

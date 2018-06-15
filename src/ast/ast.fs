@@ -49,6 +49,7 @@ and Entity =
     mutable Meta : Metadata list
     mutable Type : Type option
     mutable Errors : Error list
+    mutable Console : string option
     mutable Value : Value option }
 
 type BlockKind = 

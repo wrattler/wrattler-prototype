@@ -34,6 +34,7 @@
     <Compile Include="gamma/providers/fsharp.fs" />
     <Compile Include="gamma/providers/rest.fs" />
     <Compile Include="gamma/providers/pivot.fs" />
+    <Compile Include="gamma/live/pivot.fs" />
     <Compile Include="gamma/interpreter.fs" />
     <Compile Include="gamma/services.fs" />
     <Compile Include="gamma/monaco.fs" />

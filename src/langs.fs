@@ -41,7 +41,7 @@ and Analyzer<'TInput, 'TOutput, 'TContext> =
 and LanguagePlugin<'TCheckingContext, 'TInterpreterContext, 'TEditorEvent, 'TEditorState> = 
   abstract Parse : string * string -> BlockKind * Error list
   abstract Bind : BindingContext * BlockKind -> Async<Entity * list<string * Entity>>  
-  abstract Interpreter : Analyzer<unit, Value, 'TInterpreterContext> option
+  abstract Interpreter : Analyzer<unit, string * Value, 'TInterpreterContext> option
   abstract TypeChecker : Analyzer<TypeCheckingContext, Type, 'TCheckingContext> option
   abstract Editor : Editor<'TEditorEvent, 'TEditorState> option
 

@@ -140,10 +140,10 @@ let recursiveAnalyzer result =
         return result } }
 
 let defaultTypeChecker = recursiveAnalyzer { new Type } 
-let defaultInterpreter = recursiveAnalyzer Value.Nothing
+let defaultInterpreter = recursiveAnalyzer ("", Value.Nothing)
 
 let builtinInterprter evalf = 
-  { new Analyzer<unit, Wrattler.Ast.Value, _> with
+  { new Analyzer<unit, string * Wrattler.Ast.Value, _> with
       member x.CreateContext(_) = async.Return null
       member x.Analyze(ent, ctx) = evalf ctx ent }
 
@@ -168,8 +168,9 @@ let renderJsEntity ctx state entity =
 
 let renderFrames (ctx:EditorContext<_>) (state:Rendering.StandardEditorState) entity =
   [ match entity with 
-    | { Kind = EntityKind.CodeBlock(_, _, vars) } ->
+    | { Kind = EntityKind.CodeBlock(_, { Console = out }, vars) } ->
         let vars = vars |> List.choose (function { Kind = DataFrame(var, _); Value = Some(Frame value) } -> Some(var, value) | _ -> None)
+        let vars = match out with Some out -> ("(console)", out)::vars | _ -> vars
         if not (List.isEmpty vars) then
           let selected = defaultArg state.SelectedVariable (fst(List.head vars))
           yield h?ul ["class" => "nav nav-pills"] [
@@ -178,12 +179,14 @@ let renderFrames (ctx:EditorContext<_>) (state:Rendering.StandardEditorState) en
               h?a [
                 "class" => (if v = selected then "nav-link active" else "nav-link")
                 "click" =!> fun _ _ -> ctx.Trigger(Rendering.DisplayVariable(v))
-                "href" => "javascript:;" ] [h?i ["class"=>"fa fa-table"; "style"=>"margin-right:10px"][]; text v]
+                "href" => "javascript:;" ] [h?i ["class"=>"fa fa-table"; "style"=>"margin-right:5px"][]; text v]
             ]
           ]
           for v, data in vars do
             if v = selected then 
-              yield Rendering.renderTable data ctx.Refresh
+              if v = "(console)" then
+                yield h?pre [] [text data]
+              else yield Rendering.renderTable data ctx.Refresh
     | ent ->
         yield h?p [] [ text (sprintf "No frames. Entity: %A" ent) ] ]
 
@@ -294,7 +297,9 @@ let createInterpreterContext =
   createAnalyzerContext "interpreter"
     (fun ent -> ent.Value.IsSome)
     (fun lang -> defaultArg lang.Interpreter defaultInterpreter)
-    (fun ent res -> ent.Value <- Some res)
+    (fun ent (out, res) -> 
+        if out <> "" then ent.Console <- Some out
+        ent.Value <- Some res)
 
 let startAnalyzer createContext (ent:Entity) = async {
   let gctx = ref None
@@ -495,6 +500,7 @@ let render trigger globalState =
                   renderTools trigger globalState selected nd.Node.ID
                 ]
               ]
+
     yield 
       h?div ["class" => "block block-" + getColor "system"] [
         h?div ["class" => "block-body" ] [ 
@@ -663,31 +669,42 @@ let broadband =
       ]
       *)
   [ code "markdown" """
-      # UK broadband data analysis
+      # Is broadband in rural areas getting better?
       
-      We look at data on UK broadband [published by Ofcom](https://www.ofcom.org.uk/research-and-data/telecoms-research/broadband-research).
-      This analysis is fully transparent. We link directly to the government source. First, explore the data.
+      The internet in urban areas in the UK is better than internet in rural areas. In this notebook,
+      we analyse the difference between rural and urban areas and we explore whether the situation
+      got better between 2014 and 2015. To do this, we use dataset on UK broadband speed
+      [published by Ofcom](https://www.ofcom.org.uk/research-and-data/telecoms-research/broadband-research).
 
-      ### 1. Data exploration
+      ### Exploring broadband speed
       
-      First, we use TheGamma to get the data and explore it interactively...
-
-      We look at data on UK broadband [published by Ofcom](https://www.ofcom.org.uk/research-and-data/telecoms-research/broadband-research).
-      This analysis is fully transparent. We link directly to the government source. First, explore the data.
+      First, we look at the difference in broadband quality between 2014 and 2015. In this early
+      exploratory stage, we want to get rapid feedback when writing code and see results immediately.
+      In addition, we want to use data transparently and link directly to the government data source.
+      The following cell uses TheGamma to explore the data.
       """
     code "gamma" """
-      let data =
+      let avgs2014 =
         web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls")
           .explore.'group data'.'by Urban/rural'.'average Download speed (Mbit/s) 24 hrs'.then
           .'filter data'.'Urban/rural is not'.''.then
           .'get series'.'with key Urban/rural'.'and value Download speed (Mbit/s) 24 hrs'
 
-      compost.charts.bar(data)
+      let avgs2015 =
+        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls")
+          .explore.'group data'.'by URBAN2'.'average DLpeakmean'.then
+          .'filter data'.'URBAN2 is not'.'Semi-urban'.then
+          .'get series'.'with key URBAN2'.'and value DLpeakmean'
+
+      compost.charts.bar(avgs2014)
+      compost.charts.bar(avgs2015)
     """
     code "markdown" """
-      ###  2.  Data acquisition
+      ###  Joining broadband data from two years
 
-      Now, download data for years 2014 and 2015. We clean data for 2015 manually and select rows we want.
+      Now that we have a basic idea about our data, we want to download the two datasets and clean them
+      so that we can do a more rigorous statistical analysis. To do this, we will still use TheGamma scripts.
+      First, we get the two files and we manually select columns from 2014 that we want to use for our analysis.
     """
     code "gamma" """
       let bb2014 = 
@@ -706,9 +723,9 @@ let broadband =
           .explore.'get the data'    
     """ 
     code "markdown" """
-      ### 3. Automatic data cleaning
-      To clean data for 2015, we use the `datadiff` assistant, which helps us adapt corrupted or messy dataset to a
-      format of a clean dataset containing strucutrally same data.
+      As you can see, the 2015 dataset uses different structure than the 2014 dataset. If we want to run any analysis,
+      we need to restructure the datasets to use the same format. This is a typical example of tedious task that 
+      can be automated by an AI assistant. Wrattler integrates with datadiff, which allows us to do this automatically:
     """
     code "gamma" """
       let bb2015fix = 
@@ -716,66 +733,110 @@ let broadband =
           .'Delete all recommended columns'.Result
     """
     code "markdown" "
-      ### 4. Polyglot data analysis
-      So far, we did all the work in simple interactive TheGamma language. Now is time to do some real work! 
-      We will use R to do some analysis. Note that all data frames are automatically available.
+      ### Analysing broadband change in rural areas
+
+      Next, we would like to perform simpel statistical analysis to asses whether the internet speed in rural
+      areas is improving faster than internet speed in urban areas. So far, we did all our work in a simple
+      interactive language supported by Wrattler. For statistical analysis, we need to use another language.
+      In the following demo, we use R. Note that all data frames defined earlier are automatically available.
       "
     code "r" """
       colnames(bb2014) <- c("Urban","Down","Up","Latency","Web")
       colnames(bb2015fix) <- c("Urban","Down","Up","Latency","Web")
 
-      training <- 
-        bb2014 %>% mutate(Urban = ifelse(Urban=="Urban", 1, 0))
+      bball <- rbind(bb2014, bb2015fix)
+      bball$Year <- c(rep(2014, nrow(bb2014)), rep(2015, nrow(bb2015fix)))
+      bball <- bball %>%
+        mutate(IsRural = ifelse(Urban == "Urban", 0, 1),
+                YearAfter = ifelse(Year == 2014, 0, 1))
+     
+      did_model <- lm(Down ~ IsRural + YearAfter + IsRural*YearAfter, data = bball)
+      print(summary(did_model))
+      """
+    (*code "markdown" """
+      The previous defines a combined data frame and it prints output to console. Next, we
+      will also export a dataframe that can be nicely visualized.
+      """
+    code "r" """
+      colnames(bb2014) <- c("Urban","Down","Up","Latency","Web")
+      colnames(bb2015fix) <- c("Urban","Down","Up","Latency","Web")
 
-      test <- 
-        bb2015fix %>% mutate(Urban = ifelse(Urban=="Urban", 1, 0)) 
+      training <- bb2014 %>% mutate(Urban = ifelse(Urban=="Urban", 1, 0))
+      test <- bb2015fix %>% mutate(Urban = ifelse(Urban=="Urban", 1, 0)) 
 
       model <- glm(Urban ~.,family=binomial(link='logit'),data=training)
       pred <- predict(model, test, type="response") %>% round
       pred[is.na(pred)] <- 0.5
 
-      predicted <- data.frame(Urban=pred, ActualUrban=test$Urban)
-    """
+      combined <- data.frame(Urban=pred, ActualUrban=test$Urban, Ones=rep(1,length(pred)))
+      viz <- aggregate(combined$Ones, by=list(combined$ActualUrban, combined$Urban), FUN=sum)
+      colnames(viz) <- c("Actual", "Predicted", "Count")
+      rm(training,test,pred,combined)
+      """*)
     code "markdown" """
-      ### 5. Interactive data visualization
-      Thanks to the polyglot nature, we can mix TheGamma, R, JavaScript in one notebook.
-      To conclude, let's draw a simple chart using the Vega visualization library.
+      ### Building rich data visualizations
+
+      Finally, we would like to build a data visualization that shows the change of broadband 
+      speeds. In this notebook, we build a simple bar chart, but we also want to be able
+      to create rich interactive visualizations that let the reader explore further. In 
+      Wrattler, we can easily include JavaScript cells that, again, have access to all data
+      frames defined earlier. The following sample uses the [Vega lite](https://vega.github.io/vega-lite/) 
+      library to build the bar chart.
       """
     code "javascript" """
-      function sum(arr, col) { 
-        var res = 0;
-        for(var i = 0; i < arr.length; i++) res += arr[i][col];
-        return res;
-      }
+      var viz = 
+        avgs2015.map(function(v){ v.label = v.key + " (2015)"; return v }).concat
+          (avgs2014.map(function(v){ v.label = v.key + " (2014)"; return v }));
 
-      var urban2014 = sum(training, "Urban");
-      var urban2015 = sum(test, "Urban");
-      var urbanGuess = sum(predicted, "Urban");
-
-      var agg = 
-        [ { "Type": "Urban", "Label": "2014 - Urban", "Count": urban2014 },
-          { "Type": "Rural", "Label": "2014 - Rural", "Count": training.length-urban2014 },
-          { "Type": "Urban", "Label": "2015 - Urban", "Count": urban2015 },
-          { "Type": "Rural", "Label": "2015 - Rural", "Count": test.length-urban2015 },
-          { "Type": "Urban", "Label": "Guess - Urban", "Count": urbanGuess },
-          { "Type": "Rural", "Label": "Guess - Rural", "Count": predicted.length-urbanGuess } ];
-
-      var spec = {
-        "$schema": "https://vega.github.io/schema/vega-lite/v2.0.json",
-        "width": 800,
-        "height": 400,
-        "data": { "values": agg },
-        "mark": "bar",
-        "encoding": {
-          "x": {"field": "Label", "type": "ordinal"},
-          "y": {"field": "Count", "type": "quantitative"},
-          "color": {"field": "Type", "type": "nominal"}
-        }
-      }
+      var spec = 
+        { "$schema": "https://vega.github.io/schema/vega-lite/v2.0.json",
+          "mark": "bar", "width": 800, "height": 300,
+          "data": { "values": viz },
+          "encoding": {
+            "x": {"field": "label", "type": "ordinal"},
+            "y": {"field": "value", "type": "quantitative"},
+            "color": {"field": "key", "type": "nominal", "scale": { "range": ["#90AA4C", "#4B61A8"] }} } }
       addOutput(function(id) { 
         vega.embed("#" + id, spec, {actions:false});
       });
-        """
+      """(*
+    code "javascript" """
+      function lookup(act, pred) {
+        for(var i = 0; i < 4; i++) 
+          if (viz[i].Actual == act && viz[i].Predicted == pred) return viz[i].Count;
+      }
+
+      var red = "#E07945", blue = "#649AE0";
+      var json = {
+        "nodes": [
+           {"name":"Rural (Actual 2015)", "color":red}, {"name":"Urban (Actual 2015)", "color":blue},
+           {"name":"Rural (Model using 2014)", "color":red}, {"name":"Urban (Model using 2014)", "color":blue}
+        ],
+        "links": [
+          {"source":0,"target":2,"value":lookup(0, 0),"color":red},
+          {"source":1,"target":2,"value":lookup(1, 0),"color":red},
+          {"source":0,"target":3,"value":lookup(0, 1),"color":blue},
+          {"source":1,"target":3,"value":lookup(1, 1),"color":blue}
+        ]
+      };
+
+      function render(id) {
+        document.getElementById(id).style.height = "500px";
+        document.getElementById(id).style.width = "80%";
+        document.getElementById(id).style.paddingLeft = "10%";
+        d3.select("#" + id).append("svg").chart("Sankey.Path")
+          .name(function(node) { return node.name; })
+          .colorNodes(function(name, node) { return node.color || "#9f9fa3"; })
+          .colorLinks(function(link) { return link.color || "#9f9fa3"; })
+          .nodeWidth(25)
+          .nodePadding(30)
+          .spread(true)
+          .iterations(0)
+          .draw(json);
+      }
+
+      addOutput(render);
+      """*)
   ]
 //*)
 

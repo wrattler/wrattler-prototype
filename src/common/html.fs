@@ -257,9 +257,9 @@ type El(ns) =
   member x.once id f node = 
     Func(Element(x.Namespace, "div", null, [|"id" => "htmlonce-" + id|], [| node |]), fun () ->
       let el = Browser.document.getElementById("htmlonce-" + id)
-      if (el.dataset.["initialized"] <> "true") then
+      if (el.dataset.["initialized"] <> id) then
         f el
-        el.dataset.["initialized"] <- "true")
+        el.dataset.["initialized"] <- id)
 (*
   member x.delayed sym body f =
     Delayed(sym, body, f)
