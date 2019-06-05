@@ -501,6 +501,7 @@ let render trigger globalState =
                 ]
               ]
 
+(*
     yield 
       h?div ["class" => "block block-" + getColor "system"] [
         h?div ["class" => "block-body" ] [ 
@@ -510,6 +511,7 @@ let render trigger globalState =
                  "href" => "javascript:;" ] [text "draw dependency graph"]  ]
           ]
         ]
+        *)
       ]
 
 let nextBlockId = 
@@ -602,6 +604,14 @@ let code lang (src:string) =
   let block, errors = languages.[lang].Parse(id, src)
   { Node = { ID = id; BlockKind = block; Errors = errors }; Entity = None; Range = { Block = id; Start = 0; End = 0; } }
 
+// https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls
+// Copy: https://raw.githubusercontent.com/the-gamma/workyard/master/broadband/bb2014.csv
+// Copy: http://localhost:8080/data/bb2014.csv
+//
+// https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls
+// Copy: https://raw.githubusercontent.com/the-gamma/workyard/master/broadband/bb2015.csv
+// Copy: http://localhost:8080/data/bb2015.csv
+
 let empty = 
   [ code "markdown" """
       # Wrattler demos
@@ -685,13 +695,13 @@ let broadband =
       """
     code "gamma" """
       let avgs2014 =
-        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls")
+        web.loadTable("http://localhost:8080/data/bb2014.csv?xx")
           .explore.'group data'.'by Urban/rural'.'average Download speed (Mbit/s) 24 hrs'.then
           .'filter data'.'Urban/rural is not'.''.then
           .'get series'.'with key Urban/rural'.'and value Download speed (Mbit/s) 24 hrs'
 
       let avgs2015 =
-        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls")
+        web.loadTable("http://localhost:8080/data/bb2015.csv?xx")
           .explore.'group data'.'by URBAN2'.'average DLpeakmean'.then
           .'filter data'.'URBAN2 is not'.'Semi-urban'.then
           .'get series'.'with key URBAN2'.'and value DLpeakmean'
@@ -708,7 +718,7 @@ let broadband =
     """
     code "gamma" """
       let bb2014 = 
-        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0014/74120/panellist_data_november_2014.csv.xls")
+        web.loadTable("http://localhost:8080/data/bb2014.csv")
           .explore.'drop columns'.'drop Id'.'drop Distance band'.'drop Distance band used for weighting'
           .'drop DNS failure (%)24-hour'.'drop DNS failure (%)8-10pm weekday'.'drop DNS resolution (ms)24-hour'
           .'drop DNS resolution (ms)8-10pm weekday'.'drop Download speed (Mbit/s) 8-10pm weekday'.'drop Download speed (Mbit/s) Max'
@@ -719,7 +729,7 @@ let broadband =
           .then.'get the data'
     
       let bb2015 = 
-        web.loadTable("https://www.ofcom.org.uk/__data/assets/excel_doc/0015/50073/panellist-data.csv.xls")
+        web.loadTable("http://localhost:8080/data/bb2015.csv")
           .explore.'get the data'    
     """ 
     code "markdown" """
@@ -753,26 +763,11 @@ let broadband =
       did_model <- lm(Down ~ IsRural + YearAfter + IsRural*YearAfter, data = bball)
       print(summary(did_model))
       """
-    (*code "markdown" """
-      The previous defines a combined data frame and it prints output to console. Next, we
-      will also export a dataframe that can be nicely visualized.
-      """
-    code "r" """
-      colnames(bb2014) <- c("Urban","Down","Up","Latency","Web")
-      colnames(bb2015fix) <- c("Urban","Down","Up","Latency","Web")
 
-      training <- bb2014 %>% mutate(Urban = ifelse(Urban=="Urban", 1, 0))
-      test <- bb2015fix %>% mutate(Urban = ifelse(Urban=="Urban", 1, 0)) 
+(*  ---------------------------------------------------------------------------------------
+    Boring visualization with just bar charts
+    ---------------------------------------------------------------------------------------
 
-      model <- glm(Urban ~.,family=binomial(link='logit'),data=training)
-      pred <- predict(model, test, type="response") %>% round
-      pred[is.na(pred)] <- 0.5
-
-      combined <- data.frame(Urban=pred, ActualUrban=test$Urban, Ones=rep(1,length(pred)))
-      viz <- aggregate(combined$Ones, by=list(combined$ActualUrban, combined$Urban), FUN=sum)
-      colnames(viz) <- c("Actual", "Predicted", "Count")
-      rm(training,test,pred,combined)
-      """*)
     code "markdown" """
       ### Building rich data visualizations
 
@@ -799,24 +794,63 @@ let broadband =
       addOutput(function(id) { 
         vega.embed("#" + id, spec, {actions:false});
       });
-      """(*
+      """
+*)
+
+(*  ---------------------------------------------------------------------------------------
+    Cool visualization with flows
+    ---------------------------------------------------------------------------------------
+*)
+    code "markdown" """
+      ### Building rich data visualizations
+
+      We would like to build a data visualization that shows whether the internet
+      speed in rural areas has improved. Did the quality of internet in rural areas improve
+      between 2014 and 2015 to reach the quality in urban areas? To do this, we build a 
+      statistical model that predicts whether an area is rural or urban based on internet
+      quality data from the year 2014. We then run this on data from 2015 and we will see
+      how many of the areas got internet connection that would be classified as urban in 2014.
+      To do the modelling, we use generalised linear models in R:
+      """
+    code "r" """
+      colnames(bb2014) <- c("Urban","Down","Up","Latency","Web")
+      colnames(bb2015fix) <- c("Urban","Down","Up","Latency","Web")
+
+      training <- bb2014 %>% mutate(Urban = ifelse(Urban=="Urban", 1, 0))
+      test <- bb2015fix %>% mutate(Urban = ifelse(Urban=="Urban", 1, 0)) 
+
+      model <- glm(Urban ~.,family=binomial(link='logit'),data=training)
+      pred <- predict(model, test, type="response") %>% round
+      pred[is.na(pred)] <- 0.5
+
+      combined <- data.frame(Urban=pred, ActualUrban=test$Urban, Ones=rep(1,length(pred)))
+      viz <- aggregate(combined$Ones, by=list(combined$ActualUrban, combined$Urban), FUN=sum)
+      colnames(viz) <- c("Actual", "Predicted", "Count")
+      rm(training,test,pred,combined)"""
+    code "markdown" """
+      Finally, we build the data visualization. To do this we use the popular
+      [JavaScript library D3](https://d3js.org/). We create a sankey chart that
+      shows the change as a flow. On the left, we actual 2015 data and on the right,
+      we have an indicator of whether an area is rural or urban as predicted by our
+      2014 model.
+      """
     code "javascript" """
       function lookup(act, pred) {
         for(var i = 0; i < 4; i++) 
           if (viz[i].Actual == act && viz[i].Predicted == pred) return viz[i].Count;
       }
 
-      var red = "#E07945", blue = "#649AE0";
+      var red = "#7bbf7b", yellow = "#af8dc3";
       var json = {
         "nodes": [
-           {"name":"Rural (Actual 2015)", "color":red}, {"name":"Urban (Actual 2015)", "color":blue},
-           {"name":"Rural (Model using 2014)", "color":red}, {"name":"Urban (Model using 2014)", "color":blue}
+           {"name":"Rural (As reported in 2015)", "color":red}, {"name":"Urban (As reported in 2015)", "color":yellow},
+           {"name":"Rural (Classified using 2014 model)", "color":red}, {"name":"Urban (Classified using 2014 model)", "color":yellow}
         ],
         "links": [
           {"source":0,"target":2,"value":lookup(0, 0),"color":red},
           {"source":1,"target":2,"value":lookup(1, 0),"color":red},
-          {"source":0,"target":3,"value":lookup(0, 1),"color":blue},
-          {"source":1,"target":3,"value":lookup(1, 1),"color":blue}
+          {"source":0,"target":3,"value":lookup(0, 1),"color":yellow},
+          {"source":1,"target":3,"value":lookup(1, 1),"color":yellow}
         ]
       };
 
@@ -835,10 +869,9 @@ let broadband =
           .draw(json);
       }
 
-      addOutput(render);
-      """*)
+      addOutput(render);""" 
+      //*)
   ]
-//*)
 
 let demo = 
   if Browser.window.location.pathname.Contains("broadband") then broadband else empty

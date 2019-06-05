@@ -91,22 +91,25 @@ let rec resolveProvider lookup ignoreFilter kind endpoint =
 let globals = buildGlobalsTable (fun lookup -> async {
   let! js = 
     TypeProviders.FSharpProvider.provideFSharpTypes
-      lookup "https://thegamma.net/lib/thegamma-0.1/libraries.json"
+      lookup "http://localhost:8080/lib/libraries.json" //"https://thegamma.net/lib/thegamma-0.1/libraries.json"
+  (*
   let wb = 
     TypeProviders.RestProvider.provideRestType 
       lookup (resolveProvider lookup false) "worldbank" "https://thegamma-services.azurewebsites.net/worldbank" ""
+  *)
   let dt = 
     TypeProviders.RestProvider.provideRestType  
       lookup (resolveProvider lookup false) "web" "http://localhost:8897/providers/data/" ""
+  (*
   let! ol = 
     TypeProviders.Pivot.providePivotType 
       "https://thegamma-services.azurewebsites.net/pdata/olympics" false "olympics" lookup
-    
+  *)  
   let dd = 
     TypeProviders.RestProvider.provideRestType 
       //lookup (resolveProvider lookup false) "datadiff" "https://wrattler-datadiff-service.azurewebsites.net/datadiff" ""  
       lookup (resolveProvider lookup false) "datadiff" "http://localhost:10037/datadiff" "" 
-  return js @ [ ol; wb; dd; dt ] })
+  return js @ [ dd; dt ] }) // ol; wb
 
 // ------------------------------------------------------------------------------------------------
 
